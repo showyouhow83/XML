@@ -14,6 +14,10 @@ declare namespace Cloudflare {
     INGEST_TOKEN: string;
     // Optional password gate for the dashboard UI.
     APP_PASSWORD?: string;
+    // Optional: GitHub token (Actions read+write) so the "Collect now" button can
+    // trigger the collector workflow. Plus the "owner/repo" it lives in.
+    GH_DISPATCH_TOKEN?: string;
+    GITHUB_REPO?: string;
   }
 }
 

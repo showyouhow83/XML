@@ -254,6 +254,8 @@ export interface InvoiceFilters {
   account?: string;
   docType?: string;
   moneda?: string;
+  emisorId?: string;
+  receptorId?: string;
   from?: string;
   to?: string;
   hasPdf?: boolean;
@@ -286,6 +288,8 @@ function buildWhere(f: InvoiceFilters): { sql: string; binds: unknown[] } {
   if (f.account) { clauses.push(`source_account = ?`); binds.push(f.account); }
   if (f.docType) { clauses.push(`doc_type = ?`); binds.push(f.docType); }
   if (f.moneda) { clauses.push(`moneda = ?`); binds.push(f.moneda); }
+  if (f.emisorId) { clauses.push(`emisor_id = ?`); binds.push(f.emisorId); }
+  if (f.receptorId) { clauses.push(`receptor_id = ?`); binds.push(f.receptorId); }
   if (f.from) { clauses.push(`fecha_emision >= ?`); binds.push(f.from); }
   if (f.to) { clauses.push(`fecha_emision <= ?`); binds.push(f.to + 'T23:59:59'); }
   if (f.hasPdf === true) clauses.push(`has_pdf = 1`);
@@ -358,12 +362,38 @@ export async function filterOptions(db: D1Database) {
   const accountsP = db.prepare(`SELECT DISTINCT source_account AS v FROM invoices WHERE source_account IS NOT NULL ORDER BY v`).all<{ v: string }>();
   const typesP = db.prepare(`SELECT DISTINCT doc_type AS v FROM invoices WHERE doc_type IS NOT NULL ORDER BY v`).all<{ v: string }>();
   const monedasP = db.prepare(`SELECT DISTINCT moneda AS v FROM invoices WHERE moneda IS NOT NULL ORDER BY v`).all<{ v: string }>();
-  const [accounts, types, monedas] = await Promise.all([accountsP, typesP, monedasP]);
+  const emisoresP = db.prepare(`SELECT emisor_id AS id, MAX(emisor_nombre) AS nombre, COUNT(*) AS n FROM invoices WHERE emisor_id IS NOT NULL GROUP BY emisor_id ORDER BY nombre`).all<{ id: string; nombre: string; n: number }>();
+  const [accounts, types, monedas, emisores] = await Promise.all([accountsP, typesP, monedasP, emisoresP]);
   return {
     accounts: (accounts.results ?? []).map((r) => r.v),
     docTypes: (types.results ?? []).map((r) => r.v),
     monedas: (monedas.results ?? []).map((r) => r.v),
+    emisores: emisores.results ?? [],
   };
+}
+
+export interface IssuerGroup {
+  emisor_id: string;
+  emisor_nombre: string;
+  moneda: string;
+  count: number;
+  impuesto: number;
+  total: number;
+}
+
+/** Invoices summed per issuer (cédula) + currency — the "group and add up" view. */
+export async function groupByIssuer(db: D1Database, f: InvoiceFilters): Promise<IssuerGroup[]> {
+  const { sql: where, binds } = buildWhere(f);
+  const { results } = await db
+    .prepare(
+      `SELECT emisor_id, MAX(emisor_nombre) AS emisor_nombre, moneda, COUNT(*) AS count,
+              SUM(total_impuesto) AS impuesto, SUM(total_comprobante) AS total
+       FROM invoices ${where}
+       GROUP BY emisor_id, moneda ORDER BY total DESC`
+    )
+    .bind(...binds)
+    .all<IssuerGroup>();
+  return results ?? [];
 }
 
 /** Full rows for CSV export (respects filters, ignores pagination). */

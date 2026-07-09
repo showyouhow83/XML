@@ -1,21 +1,26 @@
 ---
 import { env } from 'cloudflare:workers';
 import Base from '../layouts/Base.astro';
-import { ensureSchema, listInvoices, filterOptions, overviewStats, type InvoiceFilters } from '../lib/db';
+import { ensureSchema, listInvoices, filterOptions, overviewStats, groupByIssuer, type InvoiceFilters, type IssuerGroup } from '../lib/db';
 
 const url = Astro.url;
 const p = url.searchParams;
+const collect = p.get('collect');
+const view = p.get('view'); // 'issuers' = grouped-by-cédula summary
 
 let dbError: string | null = null;
 let data: Awaited<ReturnType<typeof listInvoices>> | null = null;
-let options = { accounts: [] as string[], docTypes: [] as string[], monedas: [] as string[] };
+let options = { accounts: [] as string[], docTypes: [] as string[], monedas: [] as string[], emisores: [] as { id: string; nombre: string; n: number }[] };
 let stats = { invoices: 0, withPdf: 0, mailboxes: 0 };
+let groups: IssuerGroup[] = [];
 
 const filters: InvoiceFilters = {
   q: p.get('q') || undefined,
   account: p.get('account') || undefined,
   docType: p.get('docType') || undefined,
   moneda: p.get('moneda') || undefined,
+  emisorId: p.get('emisorId') || undefined,
+  receptorId: p.get('receptorId') || undefined,
   from: p.get('from') || undefined,
   to: p.get('to') || undefined,
   hasPdf: p.get('hasPdf') === '1' ? true : p.get('hasPdf') === '0' ? false : undefined,
@@ -30,10 +35,11 @@ if (!env.DB) {
 } else {
   try {
     await ensureSchema(env.DB);
-    [data, options, stats] = await Promise.all([
+    [data, options, stats, groups] = await Promise.all([
       listInvoices(env.DB, filters),
       filterOptions(env.DB),
       overviewStats(env.DB),
+      view === 'issuers' ? groupByIssuer(env.DB, filters) : Promise.resolve([] as IssuerGroup[]),
     ]);
   } catch (err) {
     dbError = (err as Error).message;
@@ -78,9 +84,19 @@ const showingTo = Math.min(offset + limit, total);
 ---
 
 <Base title="Dashboard · Financing Inbox" active="dashboard">
-  <h1>Invoice dashboard</h1>
-  <p class="sub">Electronic invoices (XML) collected from your client mailboxes, with matched PDFs.</p>
+  <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap;">
+    <div>
+      <h1>Invoice dashboard</h1>
+      <p class="sub">Electronic invoices (XML) collected from your client mailboxes, with matched PDFs.</p>
+    </div>
+    <form method="post" action="/api/collect-now" class="inline">
+      <button class="btn" type="submit" title="Pull new invoices from your mailboxes">⟳ Collect now</button>
+    </form>
+  </div>
 
+  {collect === 'queued' && <div class="banner ok">Collection started — it runs in the background (~1–2 min). Refresh to see new invoices.</div>}
+  {collect === 'notoken' && <div class="banner err">“Collect now” needs a GitHub token. Add the <code>GH_DISPATCH_TOKEN</code> secret to the Worker (see README), or run the collector from GitHub Actions.</div>}
+  {collect === 'error' && <div class="banner err">Couldn’t start collection — check the <code>GH_DISPATCH_TOKEN</code> secret and that it has Actions read/write on the repo.</div>}
   {dbError && <div class="banner err">{dbError}</div>}
 
   <section class="cards">
@@ -121,6 +137,15 @@ const showingTo = Math.min(offset + limit, total);
         {options.monedas.map((m) => <option value={m} selected={filters.moneda === m}>{m}</option>)}
       </select>
     </div>
+    <div class="field" style="flex:1 1 220px;">
+      <label for="emisorId">Issuer (cédula)</label>
+      <select id="emisorId" name="emisorId">
+        <option value="">All</option>
+        {options.emisores.map((e) => (
+          <option value={e.id} selected={filters.emisorId === e.id}>{e.nombre} · {e.id} ({e.n})</option>
+        ))}
+      </select>
+    </div>
     <div class="field"><label for="from">From</label><input id="from" type="date" name="from" value={filters.from ?? ''} /></div>
     <div class="field"><label for="to">To</label><input id="to" type="date" name="to" value={filters.to ?? ''} /></div>
     <div class="field">
@@ -133,12 +158,45 @@ const showingTo = Math.min(offset + limit, total);
     </div>
     <input type="hidden" name="sort" value={filters.sort} />
     <input type="hidden" name="dir" value={filters.dir} />
+    {view && <input type="hidden" name="view" value={view} />}
     <button class="btn" type="submit">Apply</button>
     <a class="btn secondary" href="/">Reset</a>
     <a class="btn secondary" href={exportHref}>Export CSV</a>
   </form>
 
-  {data && data.rows.length > 0 ? (
+  <div style="display:flex; gap:6px; margin-bottom:12px;">
+    <a class={`btn sm ${view === 'issuers' ? 'secondary' : ''}`} href={qs({ view: undefined, offset: 0 })}>Invoices</a>
+    <a class={`btn sm ${view === 'issuers' ? '' : 'secondary'}`} href={qs({ view: 'issuers', offset: 0 })}>Group by issuer (cédula)</a>
+  </div>
+
+  {view === 'issuers' ? (
+    groups.length > 0 ? (
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Issuer</th><th>Cédula</th><th class="right"># Invoices</th>
+              <th>Cur.</th><th class="right">Total Tax</th><th class="right">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {groups.map((g) => (
+              <tr>
+                <td><a href={qs({ emisorId: g.emisor_id, view: undefined, offset: 0 })}>{g.emisor_nombre || '—'}</a></td>
+                <td class="muted">{g.emisor_id}</td>
+                <td class="num">{g.count}</td>
+                <td>{g.moneda}</td>
+                <td class="num">{money(g.impuesto, g.moneda)}</td>
+                <td class="num"><strong>{money(g.total, g.moneda)}</strong></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    ) : (
+      !dbError && <div class="panel empty">No data to group yet.</div>
+    )
+  ) : data && data.rows.length > 0 ? (
     <>
       <div class="table-wrap">
         <table>
