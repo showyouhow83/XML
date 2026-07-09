@@ -150,6 +150,7 @@ const showingTo = Math.min(offset + limit, total);
               <th>Consecutivo</th>
               <th>Mailbox</th>
               <th>Cur.</th>
+              <th class="right">IVA %</th>
               <th class="right"><a href={sortLink('impuesto', 'Tax').href}>{sortLink('impuesto', 'Tax').label}</a></th>
               <th class="right"><a href={sortLink('total', 'Total').href}>{sortLink('total', 'Total').label}</a></th>
               <th>Files</th>
@@ -161,9 +162,10 @@ const showingTo = Math.min(offset + limit, total);
                 <td>{fmtDate(r.fecha_emision)}</td>
                 <td>{r.doc_type}</td>
                 <td title={r.emisor_id}>{r.emisor_nombre || '—'}</td>
-                <td class="muted">{r.consecutivo}</td>
+                <td class="muted"><a href={`/invoice/${encodeURIComponent(r.clave)}`}>{r.consecutivo}</a></td>
                 <td class="muted">{r.source_account}</td>
                 <td>{r.moneda}</td>
+                <td class="num">{r.iva_rate != null ? `${r.iva_rate}%` : '—'}</td>
                 <td class="num">{money(r.total_impuesto, r.moneda)}</td>
                 <td class="num"><strong>{money(r.total_comprobante, r.moneda)}</strong></td>
                 <td>

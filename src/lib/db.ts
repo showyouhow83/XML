@@ -17,12 +17,15 @@ const SCHEMA: string[] = [
   )`,
   `CREATE TABLE IF NOT EXISTS invoices (
     clave TEXT PRIMARY KEY, doc_type TEXT, doc_type_raw TEXT, consecutivo TEXT,
-    fecha_emision TEXT, emisor_nombre TEXT, emisor_id TEXT, receptor_nombre TEXT,
-    receptor_id TEXT, moneda TEXT, total_gravado REAL, total_exento REAL,
+    fecha_emision TEXT, emisor_nombre TEXT, emisor_id TEXT, emisor_email TEXT,
+    receptor_nombre TEXT, receptor_id TEXT, receptor_email TEXT, moneda TEXT,
+    tipo_cambio REAL, codigo_actividad TEXT, condicion_venta TEXT, iva_rate REAL,
+    total_gravado REAL, total_exento REAL, total_exonerado REAL,
     total_descuentos REAL, total_venta_neta REAL, total_impuesto REAL,
-    total_comprobante REAL, source_account TEXT, message_uid TEXT,
-    xml_filename TEXT, pdf_filename TEXT, has_pdf INTEGER NOT NULL DEFAULT 0,
-    received_at TEXT, created_at TEXT NOT NULL
+    total_otros_cargos REAL, total_comprobante REAL, source_account TEXT,
+    message_uid TEXT, xml_filename TEXT, pdf_filename TEXT,
+    has_pdf INTEGER NOT NULL DEFAULT 0, received_at TEXT, detail_json TEXT,
+    created_at TEXT NOT NULL
   )`,
   `CREATE TABLE IF NOT EXISTS attachments (
     clave TEXT PRIMARY KEY, xml_content TEXT, pdf_content TEXT, created_at TEXT NOT NULL
@@ -32,10 +35,25 @@ const SCHEMA: string[] = [
   `CREATE INDEX IF NOT EXISTS idx_invoices_account ON invoices(source_account)`,
 ];
 
+// Columns added after the first release — applied to pre-existing invoices tables
+// via ALTER (ignored if already present). Keeps older databases in sync.
+const ADDED_INVOICE_COLUMNS: Array<[string, string]> = [
+  ['emisor_email', 'TEXT'], ['receptor_email', 'TEXT'], ['tipo_cambio', 'REAL'],
+  ['codigo_actividad', 'TEXT'], ['condicion_venta', 'TEXT'], ['iva_rate', 'REAL'],
+  ['total_exonerado', 'REAL'], ['total_otros_cargos', 'REAL'], ['detail_json', 'TEXT'],
+];
+
 let schemaReady = false;
 export async function ensureSchema(db: D1Database): Promise<void> {
   if (schemaReady) return;
   await db.batch(SCHEMA.map((sql) => db.prepare(sql)));
+  for (const [col, type] of ADDED_INVOICE_COLUMNS) {
+    try {
+      await db.prepare(`ALTER TABLE invoices ADD COLUMN ${col} ${type}`).run();
+    } catch {
+      // column already exists — fine
+    }
+  }
   schemaReady = true;
 }
 
@@ -176,37 +194,46 @@ export async function upsertInvoice(db: D1Database, r: IngestRecord): Promise<'i
   const existing = await db.prepare(`SELECT 1 FROM invoices WHERE clave = ?`).bind(r.clave).first();
   const now = new Date().toISOString();
   const hasPdf = r.pdfContentBase64 ? 1 : 0;
+  const detailJson = r.detail ? JSON.stringify(r.detail) : null;
 
   await db.batch([
     db
       .prepare(
         `INSERT INTO invoices (
            clave, doc_type, doc_type_raw, consecutivo, fecha_emision,
-           emisor_nombre, emisor_id, receptor_nombre, receptor_id, moneda,
-           total_gravado, total_exento, total_descuentos, total_venta_neta,
-           total_impuesto, total_comprobante, source_account, message_uid,
-           xml_filename, pdf_filename, has_pdf, received_at, created_at
-         ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+           emisor_nombre, emisor_id, emisor_email, receptor_nombre, receptor_id,
+           receptor_email, moneda, tipo_cambio, codigo_actividad, condicion_venta,
+           iva_rate, total_gravado, total_exento, total_exonerado, total_descuentos,
+           total_venta_neta, total_impuesto, total_otros_cargos, total_comprobante,
+           source_account, message_uid, xml_filename, pdf_filename, has_pdf,
+           received_at, detail_json, created_at
+         ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
          ON CONFLICT(clave) DO UPDATE SET
            doc_type=excluded.doc_type, doc_type_raw=excluded.doc_type_raw,
            consecutivo=excluded.consecutivo, fecha_emision=excluded.fecha_emision,
            emisor_nombre=excluded.emisor_nombre, emisor_id=excluded.emisor_id,
-           receptor_nombre=excluded.receptor_nombre, receptor_id=excluded.receptor_id,
-           moneda=excluded.moneda, total_gravado=excluded.total_gravado,
-           total_exento=excluded.total_exento, total_descuentos=excluded.total_descuentos,
-           total_venta_neta=excluded.total_venta_neta, total_impuesto=excluded.total_impuesto,
+           emisor_email=excluded.emisor_email, receptor_nombre=excluded.receptor_nombre,
+           receptor_id=excluded.receptor_id, receptor_email=excluded.receptor_email,
+           moneda=excluded.moneda, tipo_cambio=excluded.tipo_cambio,
+           codigo_actividad=excluded.codigo_actividad, condicion_venta=excluded.condicion_venta,
+           iva_rate=excluded.iva_rate, total_gravado=excluded.total_gravado,
+           total_exento=excluded.total_exento, total_exonerado=excluded.total_exonerado,
+           total_descuentos=excluded.total_descuentos, total_venta_neta=excluded.total_venta_neta,
+           total_impuesto=excluded.total_impuesto, total_otros_cargos=excluded.total_otros_cargos,
            total_comprobante=excluded.total_comprobante, source_account=excluded.source_account,
-           message_uid=excluded.message_uid,
+           message_uid=excluded.message_uid, detail_json=excluded.detail_json,
            pdf_filename=COALESCE(excluded.pdf_filename, invoices.pdf_filename),
            has_pdf=CASE WHEN excluded.has_pdf=1 THEN 1 ELSE invoices.has_pdf END,
            received_at=COALESCE(excluded.received_at, invoices.received_at)`
       )
       .bind(
         r.clave, r.docType, r.docTypeRaw, r.consecutivo, r.fechaEmision,
-        r.emisorNombre, r.emisorId, r.receptorNombre, r.receptorId, r.moneda,
-        r.totalGravado, r.totalExento, r.totalDescuentos, r.totalVentaNeta,
-        r.totalImpuesto, r.totalComprobante, r.sourceAccount, r.messageUid,
-        r.xmlFilename, r.pdfFilename, hasPdf, r.receivedAt, now
+        r.emisorNombre, r.emisorId, r.emisorEmail, r.receptorNombre, r.receptorId,
+        r.receptorEmail, r.moneda, r.tipoCambio, r.codigoActividad, r.condicionVenta,
+        r.ivaRate, r.totalGravado, r.totalExento, r.totalExonerado, r.totalDescuentos,
+        r.totalVentaNeta, r.totalImpuesto, r.totalOtrosCargos, r.totalComprobante,
+        r.sourceAccount, r.messageUid, r.xmlFilename, r.pdfFilename, hasPdf,
+        r.receivedAt, detailJson, now
       ),
     db
       .prepare(
@@ -275,6 +302,7 @@ export interface InvoiceListRow {
   emisor_id: string;
   receptor_nombre: string;
   moneda: string;
+  iva_rate: number | null;
   total_impuesto: number;
   total_comprobante: number;
   source_account: string;
@@ -298,7 +326,8 @@ export async function listInvoices(db: D1Database, f: InvoiceFilters) {
   const rowsP = db
     .prepare(
       `SELECT clave, doc_type, consecutivo, fecha_emision, emisor_nombre, emisor_id,
-              receptor_nombre, moneda, total_impuesto, total_comprobante, source_account, has_pdf
+              receptor_nombre, moneda, iva_rate, total_impuesto, total_comprobante,
+              source_account, has_pdf
        FROM invoices ${where} ORDER BY ${col} ${dir}, created_at DESC LIMIT ? OFFSET ?`
     )
     .bind(...binds, limit, offset)
@@ -345,9 +374,10 @@ export async function exportRows(db: D1Database, f: InvoiceFilters) {
   const { results } = await db
     .prepare(
       `SELECT fecha_emision, doc_type, consecutivo, clave, emisor_nombre, emisor_id,
-              receptor_nombre, receptor_id, moneda, total_gravado, total_exento,
-              total_descuentos, total_venta_neta, total_impuesto, total_comprobante,
-              source_account, has_pdf
+              emisor_email, receptor_nombre, receptor_id, receptor_email, moneda,
+              tipo_cambio, condicion_venta, iva_rate, total_gravado, total_exento,
+              total_exonerado, total_descuentos, total_venta_neta, total_impuesto,
+              total_otros_cargos, total_comprobante, source_account, has_pdf
        FROM invoices ${where} ORDER BY ${col} ${dir} LIMIT 50000`
     )
     .bind(...binds)
@@ -363,6 +393,22 @@ export async function getAttachment(db: D1Database, clave: string) {
     )
     .bind(clave)
     .first<{ xml_content: string | null; pdf_content: string | null; xml_filename: string | null; pdf_filename: string | null }>();
+}
+
+/** Every stored column for one invoice, with detail_json parsed. For the detail page. */
+export async function getInvoiceFull(
+  db: D1Database,
+  clave: string
+): Promise<(Record<string, any> & { detail: any }) | null> {
+  const row = await db.prepare(`SELECT * FROM invoices WHERE clave = ?`).bind(clave).first<Record<string, any>>();
+  if (!row) return null;
+  let detail: any = null;
+  try {
+    detail = row.detail_json ? JSON.parse(row.detail_json) : null;
+  } catch {
+    detail = null;
+  }
+  return { ...row, detail };
 }
 
 export async function overviewStats(db: D1Database) {
