@@ -1,6 +1,6 @@
 // Pure attachment -> invoice logic, shared by the collector and the IMAP probe.
 // Node-oriented (uses Buffer); kept out of the Worker bundle.
-import { extractInvoice } from '../src/lib/invoice.ts';
+import { extractInvoice, type ExtractedInvoice } from '../src/lib/invoice.ts';
 
 export interface RawAttachment {
   filename?: string;
@@ -8,23 +8,8 @@ export interface RawAttachment {
   content: Buffer;
 }
 
-export interface OutRecord {
-  clave: string;
-  docType: string;
-  docTypeRaw: string;
-  consecutivo: string | null;
-  fechaEmision: string | null;
-  emisorNombre: string | null;
-  emisorId: string | null;
-  receptorNombre: string | null;
-  receptorId: string | null;
-  moneda: string | null;
-  totalGravado: number | null;
-  totalExento: number | null;
-  totalDescuentos: number | null;
-  totalVentaNeta: number | null;
-  totalImpuesto: number | null;
-  totalComprobante: number | null;
+// Everything the extractor found, plus where it came from and the raw files.
+export interface OutRecord extends ExtractedInvoice {
   sourceAccount: string;
   messageUid: string | null;
   xmlFilename: string | null;

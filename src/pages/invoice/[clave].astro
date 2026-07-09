@@ -1,0 +1,174 @@
+---
+import { env } from 'cloudflare:workers';
+import Base from '../../layouts/Base.astro';
+import { ensureSchema, getInvoiceFull } from '../../lib/db';
+
+const clave = Astro.params.clave!;
+let inv: Awaited<ReturnType<typeof getInvoiceFull>> = null;
+let error: string | null = null;
+
+if (!env.DB) {
+  error = 'Database not available.';
+} else {
+  try {
+    await ensureSchema(env.DB);
+    inv = await getInvoiceFull(env.DB, clave);
+  } catch (err) {
+    error = (err as Error).message;
+  }
+}
+
+const money = (n: number | null | undefined, c: string | null) => {
+  if (n == null) return '—';
+  try {
+    return new Intl.NumberFormat('es-CR', { style: 'currency', currency: c || 'CRC', maximumFractionDigits: 2 }).format(n);
+  } catch {
+    return `${c || ''} ${n.toFixed(2)}`.trim();
+  }
+};
+const fmtDateTime = (iso: string | null | undefined) => (iso ? iso.replace('T', ' ').slice(0, 19) : '—');
+
+const moneda = inv?.moneda ?? 'CRC';
+const detail = inv?.detail ?? { lines: [], otrosCargos: [], taxes: [], otros: {} };
+const otrosEntries: [string, string][] = Object.entries(detail.otros ?? {});
+
+const header: Array<[string, string]> = inv
+  ? [
+      ['Clave', inv.clave],
+      ['Documento', `${inv.doc_type ?? ''} · ${inv.consecutivo ?? ''}`],
+      ['Fecha emisión', fmtDateTime(inv.fecha_emision)],
+      ['Condición venta', inv.condicion_venta ?? '—'],
+      ['Actividad', inv.codigo_actividad ?? '—'],
+      ['Moneda', `${inv.moneda ?? '—'}${inv.tipo_cambio ? ` (TC ${inv.tipo_cambio})` : ''}`],
+      ['IVA', inv.iva_rate != null ? `${inv.iva_rate}%` : '—'],
+      ['Mailbox', inv.source_account ?? '—'],
+      ['Emisor', `${inv.emisor_nombre ?? '—'} · ${inv.emisor_id ?? ''}`],
+      ['Emisor correo', inv.emisor_email ?? '—'],
+      ['Receptor', `${inv.receptor_nombre ?? '—'} · ${inv.receptor_id ?? ''}`],
+      ['Receptor correo', inv.receptor_email ?? '—'],
+    ]
+  : [];
+
+const totals: Array<[string, number | null]> = inv
+  ? [
+      ['Gravado', inv.total_gravado],
+      ['Exento', inv.total_exento],
+      ['Exonerado', inv.total_exonerado],
+      ['Descuentos', inv.total_descuentos],
+      ['Venta neta', inv.total_venta_neta],
+      ['Impuesto', inv.total_impuesto],
+      ['Otros cargos', inv.total_otros_cargos],
+      ['Total', inv.total_comprobante],
+    ]
+  : [];
+---
+
+<Base title={`Invoice ${inv?.consecutivo ?? ''}`} active="dashboard">
+  <p class="sub" style="margin-bottom:8px;"><a href="/">← Back to dashboard</a></p>
+
+  {error && <div class="banner err">{error}</div>}
+  {!error && !inv && <div class="banner err">Invoice not found.</div>}
+
+  {inv && (
+    <>
+      <h1 style="margin-bottom:2px;">{inv.emisor_nombre}</h1>
+      <p class="sub">{inv.doc_type} · {inv.consecutivo}</p>
+
+      <div style="display:flex; gap:8px; margin-bottom:20px; flex-wrap:wrap;">
+        <a class="btn secondary" href={`/api/download?clave=${encodeURIComponent(inv.clave)}&type=xml`}>Download XML</a>
+        {inv.has_pdf ? (
+          <a class="btn secondary" href={`/api/download?clave=${encodeURIComponent(inv.clave)}&type=pdf`}>Download PDF</a>
+        ) : (
+          <span class="pill muted" style="align-self:center;">no PDF</span>
+        )}
+      </div>
+
+      <div style="display:grid; grid-template-columns:2fr 1fr; gap:16px; align-items:start;">
+        <section class="panel">
+          <h2>Details</h2>
+          <table>
+            <tbody>
+              {header.map(([k, v]) => (
+                <tr><td class="muted" style="width:150px;">{k}</td><td>{v}</td></tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+
+        <section class="panel">
+          <h2>Totals ({moneda})</h2>
+          <table>
+            <tbody>
+              {totals.map(([k, v]) => (
+                <tr>
+                  <td class="muted">{k}</td>
+                  <td class="num" style={k === 'Total' ? 'font-weight:700;' : ''}>{money(v, moneda)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      </div>
+
+      <section style="margin-top:20px;">
+        <h2>Line items ({detail.lines.length})</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>#</th><th>Detalle</th><th>CABYS</th><th class="right">Cant.</th>
+                <th class="right">Precio</th><th class="right">IVA %</th>
+                <th class="right">Impuesto</th><th class="right">Total línea</th>
+              </tr>
+            </thead>
+            <tbody>
+              {detail.lines.map((l: any) => (
+                <tr>
+                  <td class="muted">{l.linea}</td>
+                  <td>{l.detalle}</td>
+                  <td class="muted">{l.codigoCabys}</td>
+                  <td class="num">{l.cantidad}</td>
+                  <td class="num">{money(l.precioUnitario, moneda)}</td>
+                  <td class="num">{l.impuestoTarifa != null ? `${l.impuestoTarifa}%` : '—'}</td>
+                  <td class="num">{money(l.impuestoMonto, moneda)}</td>
+                  <td class="num"><strong>{money(l.montoTotalLinea, moneda)}</strong></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {detail.otrosCargos && detail.otrosCargos.length > 0 && (
+        <section style="margin-top:20px;">
+          <h2>Otros cargos</h2>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Detalle</th><th class="right">%</th><th class="right">Monto</th></tr></thead>
+              <tbody>
+                {detail.otrosCargos.map((c: any) => (
+                  <tr><td>{c.detalle}</td><td class="num">{c.porcentaje}</td><td class="num">{money(c.monto, moneda)}</td></tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {otrosEntries.length > 0 && (
+        <section style="margin-top:20px;">
+          <h2>Otros datos</h2>
+          <div class="table-wrap">
+            <table>
+              <tbody>
+                {otrosEntries.map(([k, v]) => (
+                  <tr><td class="muted" style="width:220px;">{k.replace(/_/g, ' ')}</td><td>{v}</td></tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+    </>
+  )}
+</Base>
