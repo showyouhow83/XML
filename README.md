@@ -113,7 +113,18 @@ from the app.
 
 ## 7. Collect
 
-**On demand (local):**
+**Test one mailbox first (read-only, no database):**
+
+```sh
+IMAP_USER="you@gmail.com" IMAP_PASS="app-password" npm run probe
+```
+
+This connects, finds recent invoice emails, pairs XML + PDF, extracts the fields,
+and prints a summary — pushing nothing anywhere. Great for confirming IMAP access
+and parsing on a real mailbox. (Requires port 993 to be reachable from where you
+run it — a laptop or GitHub Actions works.)
+
+**On demand (local, full pipeline into D1):**
 
 ```sh
 APP_URL="https://your-worker.workers.dev" INGEST_TOKEN="…" npm run collect
@@ -178,6 +189,8 @@ scripts/              extractor tests + sample XML
 | `npm run dev`          | Local dev server                                |
 | `npm run build`        | Build the Worker                                |
 | `npm run deploy`       | Build + deploy to Cloudflare                    |
-| `npm run collect`      | Run the IMAP collector                          |
+| `npm run collect`      | Run the IMAP collector (full pipeline into D1)  |
+| `npm run probe`        | Read-only test of one mailbox (no database)     |
 | `npm run test:extract` | Validate the XML extractor against sample files |
+| `npm run test:collect` | Validate XML/PDF pairing on a real-email layout |
 | `npm run check`        | Type-check the app                              |

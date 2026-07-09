@@ -21,7 +21,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join, isAbsolute } from 'node:path';
 import { ImapFlow } from 'imapflow';
 import { simpleParser } from 'mailparser';
-import { extractInvoice } from '../src/lib/invoice.ts';
+import { buildRecords, type OutRecord } from './core.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -73,57 +73,6 @@ async function loadMailboxes(): Promise<Mailbox[]> {
   return body.mailboxes || [];
 }
 
-interface OutRecord {
-  clave: string;
-  docType: string;
-  docTypeRaw: string;
-  consecutivo: string | null;
-  fechaEmision: string | null;
-  emisorNombre: string | null;
-  emisorId: string | null;
-  receptorNombre: string | null;
-  receptorId: string | null;
-  moneda: string | null;
-  totalGravado: number | null;
-  totalExento: number | null;
-  totalDescuentos: number | null;
-  totalVentaNeta: number | null;
-  totalImpuesto: number | null;
-  totalComprobante: number | null;
-  sourceAccount: string;
-  messageUid: string | null;
-  xmlFilename: string | null;
-  xmlContent: string;
-  pdfFilename: string | null;
-  pdfContentBase64: string | null;
-  receivedAt: string | null;
-}
-
-const isXml = (a: { filename?: string; contentType?: string }) =>
-  /\.xml$/i.test(a.filename || '') || /xml/i.test(a.contentType || '');
-const isPdf = (a: { filename?: string; contentType?: string }) =>
-  /\.pdf$/i.test(a.filename || '') || /pdf/i.test(a.contentType || '');
-
-const baseName = (name = '') => name.replace(/\.[^.]+$/, '').toLowerCase();
-
-// Find the PDF that belongs to a given XML attachment.
-function matchPdf(
-  xmlName: string,
-  clave: string,
-  consecutivo: string | null,
-  pdfs: Array<{ filename?: string; content: Buffer }>
-) {
-  if (pdfs.length === 0) return null;
-  const base = baseName(xmlName);
-  const sameName = pdfs.find((p) => baseName(p.filename) === base);
-  if (sameName) return sameName;
-  if (pdfs.length === 1) return pdfs[0];
-  const byKey = pdfs.find(
-    (p) => (clave && (p.filename || '').includes(clave)) || (consecutivo && (p.filename || '').includes(consecutivo))
-  );
-  return byKey || null;
-}
-
 async function postIngest(mailbox: Mailbox, records: OutRecord[], status: string) {
   if (!APP_URL || !INGEST_TOKEN) {
     console.warn('  (APP_URL/INGEST_TOKEN not set — cannot push to app; skipping ingest)');
@@ -171,30 +120,18 @@ async function collectMailbox(mailbox: Mailbox): Promise<{ found: number; error?
           { uid: true }
         )) {
           const parsed = await simpleParser(msg.source as Buffer);
-          const atts = parsed.attachments || [];
-          const xmls = atts.filter(isXml);
-          const pdfs = atts.filter(isPdf).map((p) => ({ filename: p.filename, content: p.content as Buffer }));
-          if (xmls.length === 0) continue;
-
+          const atts = (parsed.attachments || []).map((a) => ({
+            filename: a.filename,
+            contentType: a.contentType,
+            content: a.content as Buffer,
+          }));
           const receivedAt = (msg.internalDate || parsed.date || null)?.toISOString() ?? null;
-
-          for (const xml of xmls) {
-            const xmlText = (xml.content as Buffer).toString('utf8');
-            const result = extractInvoice(xmlText);
-            if (result.status !== 'invoice') continue;
-            const inv = result.invoice;
-            const pdf = matchPdf(xml.filename || '', inv.clave, inv.consecutivo, pdfs);
-            records.push({
-              ...inv,
-              sourceAccount: mailbox.email,
-              messageUid: String(msg.uid),
-              xmlFilename: xml.filename || null,
-              xmlContent: xmlText,
-              pdfFilename: pdf?.filename || null,
-              pdfContentBase64: pdf ? pdf.content.toString('base64') : null,
-              receivedAt,
-            });
-          }
+          const { records: recs } = buildRecords(atts, {
+            sourceAccount: mailbox.email,
+            messageUid: String(msg.uid),
+            receivedAt,
+          });
+          records.push(...recs);
         }
       }
     } finally {

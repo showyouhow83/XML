@@ -43,7 +43,7 @@ for (const file of readdirSync(samplesDir).filter((f) => f.endsWith('.xml'))) {
     check('totalComprobante 1895', i.totalComprobante === 1895, String(i.totalComprobante));
   }
 
-  if (file === 'mensaje-receptor.xml') {
+  if (file === 'mensaje-receptor.xml' || file === 'mensaje-hacienda.xml') {
     check('acknowledgement is skipped', result.status === 'skipped', result.status);
   }
 }
