@@ -15,6 +15,11 @@
  *   MAILBOXES_FILE path to a JSON mailbox list (default: collector/mailboxes.json if present)
  *   CONCURRENCY    mailboxes processed in parallel (default 5)
  *   LOOKBACK_DAYS  override how many days back to search (per-mailbox value wins)
+ *
+ * Flags:
+ *   --dry-run  (or DRY_RUN=1)  connect + extract from every mailbox but store
+ *                              NOTHING — prints what it would ingest. Use it to
+ *                              rehearse the full run before writing to D1.
  */
 import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -29,6 +34,7 @@ const APP_URL = (process.env.APP_URL || '').replace(/\/$/, '');
 const INGEST_TOKEN = process.env.INGEST_TOKEN || '';
 const CONCURRENCY = Math.max(1, Number(process.env.CONCURRENCY || 5));
 const LOOKBACK_OVERRIDE = process.env.LOOKBACK_DAYS ? Number(process.env.LOOKBACK_DAYS) : undefined;
+const DRY_RUN = process.argv.includes('--dry-run') || process.env.DRY_RUN === '1';
 
 interface Mailbox {
   id?: number;
@@ -138,8 +144,13 @@ async function collectMailbox(mailbox: Mailbox): Promise<{ found: number; error?
       lock.release();
     }
     await client.logout();
-    await postIngest(mailbox, records, 'ok');
-    console.log(`  ✓ ${name}: ${records.length} invoice(s)`);
+    const withPdf = records.filter((r) => r.pdfContentBase64).length;
+    if (DRY_RUN) {
+      console.log(`  ○ ${name}: would store ${records.length} invoice(s) [${withPdf} with PDF] — dry run`);
+    } else {
+      await postIngest(mailbox, records, 'ok');
+      console.log(`  ✓ ${name}: ${records.length} invoice(s) [${withPdf} with PDF]`);
+    }
     return { found: records.length };
   } catch (err) {
     const message = (err as Error).message;
@@ -147,9 +158,11 @@ async function collectMailbox(mailbox: Mailbox): Promise<{ found: number; error?
     try {
       await client.close();
     } catch {}
-    try {
-      await postIngest(mailbox, [], `error: ${message}`);
-    } catch {}
+    if (!DRY_RUN) {
+      try {
+        await postIngest(mailbox, [], `error: ${message}`);
+      } catch {}
+    }
     return { found: 0, error: message };
   }
 }
@@ -174,12 +187,15 @@ async function main() {
     console.log('No mailboxes configured. Add some in the app or in mailboxes.json.');
     return;
   }
-  console.log(`Collecting from ${mailboxes.length} mailbox(es), ${CONCURRENCY} at a time…\n`);
+  console.log(
+    `${DRY_RUN ? '[DRY RUN] ' : ''}Collecting from ${mailboxes.length} mailbox(es), ${CONCURRENCY} at a time…\n`
+  );
   const results = await pool(mailboxes, CONCURRENCY, collectMailbox);
 
   const totalInvoices = results.reduce((s, r) => s + r.found, 0);
   const errors = results.filter((r) => r.error).length;
-  console.log(`\nDone. ${totalInvoices} invoice(s) collected, ${errors} mailbox error(s).`);
+  const verb = DRY_RUN ? 'found (not stored)' : 'collected';
+  console.log(`\nDone. ${totalInvoices} invoice(s) ${verb}, ${errors} mailbox error(s).`);
   if (errors) process.exitCode = 1;
 }
 

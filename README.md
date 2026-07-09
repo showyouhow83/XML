@@ -130,6 +130,13 @@ run it — a laptop or GitHub Actions works.)
 APP_URL="https://your-worker.workers.dev" INGEST_TOKEN="…" npm run collect
 ```
 
+Add `--dry-run` to rehearse the full multi-mailbox run — it connects and extracts
+from every mailbox but **stores nothing**, printing what it would ingest:
+
+```sh
+npm run collect -- --dry-run          # with a collector/mailboxes.json, needs no app at all
+```
+
 **Automatically (GitHub Actions cron):** the workflow in
 `.github/workflows/collect.yml` runs daily. Add these repository secrets:
 
