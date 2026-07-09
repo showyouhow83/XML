@@ -26,4 +26,8 @@ jobs:
         if: env.MAILBOXES_JSON != ''
         run: printf '%s' "$MAILBOXES_JSON" > collector/mailboxes.json
       - name: Run collector
+        if: env.APP_URL != ''
         run: npm run collect
+      - name: Skip notice
+        if: env.APP_URL == ''
+        run: echo "APP_URL secret not set — skipping. Add APP_URL and INGEST_TOKEN repo secrets to enable scheduled collection."
