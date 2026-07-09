@@ -13,6 +13,9 @@ jobs:
       APP_URL: ${{ secrets.APP_URL }}
       INGEST_TOKEN: ${{ secrets.INGEST_TOKEN }}
       CONCURRENCY: '5'
+      # How far back to search each mailbox, in days. Overrides each mailbox's
+      # own setting. 730 = pull the last 2 years. Lower it once backfilled.
+      LOOKBACK_DAYS: '730'
       # Optional: paste a full mailboxes JSON array as a secret to use the
       # file-based list instead of the mailboxes stored in the app.
       MAILBOXES_JSON: ${{ secrets.MAILBOXES_JSON }}
