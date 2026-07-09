@@ -6,15 +6,14 @@
   "observability": {
     "enabled": true
   },
-  // Cloudflare D1 (SQLite). No database_id is pinned here on purpose: Cloudflare
-  // Workers Builds auto-provisions (or links by name) the D1 on deploy — the same
-  // way it provisions the SESSION KV namespace. To pin a specific database
-  // instead, add "database_id": "<uuid>" (from the dashboard: Storage & Databases
-  // -> D1 -> your database -> Database ID).
+  // Bindings are pinned by id so Cloudflare reuses these existing resources
+  // instead of trying to auto-provision (re-create) them on each deploy.
+  "kv_namespaces": [{ "binding": "SESSION", "id": "45ae82c006684626bb5fb721799de4ea" }],
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "financing-invoices",
+      "database_name": "xml-db",
+      "database_id": "c067759f-d1ee-44d8-8987-da4ff0ffd01f",
       "migrations_dir": "migrations"
     }
   ]
