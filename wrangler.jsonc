@@ -1,19 +1,20 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "financing-invoices",
+  "name": "xml",
   "compatibility_date": "2026-06-01",
   "compatibility_flags": ["nodejs_compat"],
   "observability": {
     "enabled": true
   },
-  // Cloudflare D1 (SQLite). Create it once with:
-  //   npx wrangler d1 create financing-invoices
-  // then paste the printed database_id below.
+  // Cloudflare D1 (SQLite). No database_id is pinned here on purpose: Cloudflare
+  // Workers Builds auto-provisions (or links by name) the D1 on deploy — the same
+  // way it provisions the SESSION KV namespace. To pin a specific database
+  // instead, add "database_id": "<uuid>" (from the dashboard: Storage & Databases
+  // -> D1 -> your database -> Database ID).
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "financing-invoices",
-      "database_id": "REPLACE_WITH_YOUR_D1_DATABASE_ID",
       "migrations_dir": "migrations"
     }
   ]
