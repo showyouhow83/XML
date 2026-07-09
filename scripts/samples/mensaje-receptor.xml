@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<MensajeReceptor xmlns="https://cdn.comprobanteselectronicos.go.cr/xml-schemas/v4.3/mensajeReceptor">
+  <Clave>50601062600310123456700100001010000000123199999999</Clave>
+  <NumeroCedulaEmisor>3101123456</NumeroCedulaEmisor>
+  <Mensaje>1</Mensaje>
+  <TotalFactura>113000.00000</TotalFactura>
+</MensajeReceptor>

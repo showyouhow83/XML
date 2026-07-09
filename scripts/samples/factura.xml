@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FacturaElectronica xmlns="https://cdn.comprobanteselectronicos.go.cr/xml-schemas/v4.3/facturaElectronica">
+  <Clave>50601062600310123456700100001010000000123199999999</Clave>
+  <CodigoActividad>620100</CodigoActividad>
+  <NumeroConsecutivo>00100001010000000123</NumeroConsecutivo>
+  <FechaEmision>2026-06-05T10:30:00-06:00</FechaEmision>
+  <Emisor>
+    <Nombre>TECNOLOGIA EJEMPLO SOCIEDAD ANONIMA</Nombre>
+    <Identificacion>
+      <Tipo>02</Tipo>
+      <Numero>3101123456</Numero>
+    </Identificacion>
+    <CorreoElectronico>facturas@ejemplo.cr</CorreoElectronico>
+  </Emisor>
+  <Receptor>
+    <Nombre>CLIENTE FINAL SA</Nombre>
+    <Identificacion>
+      <Tipo>02</Tipo>
+      <Numero>3101987654</Numero>
+    </Identificacion>
+  </Receptor>
+  <CondicionVenta>01</CondicionVenta>
+  <MedioPago>01</MedioPago>
+  <DetalleServicio>
+    <LineaDetalle>
+      <NumeroLinea>1</NumeroLinea>
+      <Cantidad>1</Cantidad>
+      <UnidadMedida>Sp</UnidadMedida>
+      <Detalle>Servicio de consultoria</Detalle>
+      <PrecioUnitario>100000.00000</PrecioUnitario>
+      <MontoTotal>100000.00000</MontoTotal>
+      <SubTotal>100000.00000</SubTotal>
+      <MontoTotalLinea>113000.00000</MontoTotalLinea>
+    </LineaDetalle>
+  </DetalleServicio>
+  <ResumenFactura>
+    <CodigoTipoMoneda>
+      <CodigoMoneda>CRC</CodigoMoneda>
+      <TipoCambio>1.00000</TipoCambio>
+    </CodigoTipoMoneda>
+    <TotalServGravados>100000.00000</TotalServGravados>
+    <TotalServExentos>0.00000</TotalServExentos>
+    <TotalGravado>100000.00000</TotalGravado>
+    <TotalExento>0.00000</TotalExento>
+    <TotalVenta>100000.00000</TotalVenta>
+    <TotalDescuentos>0.00000</TotalDescuentos>
+    <TotalVentaNeta>100000.00000</TotalVentaNeta>
+    <TotalImpuesto>13000.00000</TotalImpuesto>
+    <TotalComprobante>113000.00000</TotalComprobante>
+  </ResumenFactura>
+</FacturaElectronica>

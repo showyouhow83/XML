@@ -1,0 +1,22 @@
+[
+  {
+    "label": "Acme S.A.",
+    "email": "facturas@acme.cr",
+    "host": "imap.gmail.com",
+    "port": 993,
+    "username": "facturas@acme.cr",
+    "password": "your-app-password-here",
+    "useSsl": true,
+    "lookbackDays": 30
+  },
+  {
+    "label": "Beta Ltda",
+    "email": "contabilidad@beta.co.cr",
+    "host": "imap.gmail.com",
+    "port": 993,
+    "username": "contabilidad@beta.co.cr",
+    "password": "another-app-password",
+    "useSsl": true,
+    "lookbackDays": 15
+  }
+]

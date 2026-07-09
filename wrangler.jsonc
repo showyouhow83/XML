@@ -1,0 +1,26 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "financing-invoices",
+  "compatibility_date": "2026-06-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": {
+    "enabled": true
+  },
+  // Cloudflare D1 (SQLite). Create it once with:
+  //   npx wrangler d1 create financing-invoices
+  // then paste the printed database_id below.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "financing-invoices",
+      "database_id": "REPLACE_WITH_YOUR_D1_DATABASE_ID",
+      "migrations_dir": "migrations"
+    }
+  ]
+  // The Astro Cloudflare adapter injects the Worker entry + static assets at
+  // build time, so `main`/`assets` are intentionally omitted here.
+  //
+  // Secrets (TOKEN_ENC_KEY, INGEST_TOKEN, APP_PASSWORD) are NOT stored here.
+  // Locally they live in .dev.vars; in production set them with:
+  //   npx wrangler secret put TOKEN_ENC_KEY
+}

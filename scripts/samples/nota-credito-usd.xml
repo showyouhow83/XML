@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<NotaCreditoElectronica xmlns="https://cdn.comprobanteselectronicos.go.cr/xml-schemas/v4.3/notaCreditoElectronica">
+  <Clave>50601062600310987654300100001030000000045199999999</Clave>
+  <NumeroConsecutivo>00100001030000000045</NumeroConsecutivo>
+  <FechaEmision>2026-06-08T14:05:00-06:00</FechaEmision>
+  <Emisor>
+    <Nombre>SERVICIOS GLOBALES LTDA</Nombre>
+    <Identificacion>
+      <Tipo>02</Tipo>
+      <Numero>3102555777</Numero>
+    </Identificacion>
+  </Emisor>
+  <Receptor>
+    <Nombre>IMPORTADORA DEL SUR SA</Nombre>
+    <Identificacion>
+      <Tipo>02</Tipo>
+      <Numero>3101444333</Numero>
+    </Identificacion>
+  </Receptor>
+  <ResumenFactura>
+    <CodigoTipoMoneda>
+      <CodigoMoneda>USD</CodigoMoneda>
+      <TipoCambio>515.00000</TipoCambio>
+    </CodigoTipoMoneda>
+    <TotalMercanciasGravadas>1500.00000</TotalMercanciasGravadas>
+    <TotalMercanciasExentas>250.00000</TotalMercanciasExentas>
+    <TotalVenta>1750.00000</TotalVenta>
+    <TotalDescuentos>50.00000</TotalDescuentos>
+    <TotalVentaNeta>1700.00000</TotalVentaNeta>
+    <TotalImpuesto>195.00000</TotalImpuesto>
+    <TotalComprobante>1895.00000</TotalComprobante>
+  </ResumenFactura>
+</NotaCreditoElectronica>

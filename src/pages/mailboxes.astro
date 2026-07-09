@@ -1,0 +1,106 @@
+---
+import { env } from 'cloudflare:workers';
+import Base from '../layouts/Base.astro';
+import { ensureSchema, listMailboxes, type MailboxRow } from '../lib/db';
+
+const p = Astro.url.searchParams;
+
+let dbError: string | null = null;
+let mailboxes: MailboxRow[] = [];
+
+if (!env.DB) {
+  dbError = 'D1 database binding "DB" not found. Create it with `npx wrangler d1 create financing-invoices` and update wrangler.jsonc.';
+} else {
+  try {
+    await ensureSchema(env.DB);
+    mailboxes = await listMailboxes(env.DB);
+  } catch (err) {
+    dbError = (err as Error).message;
+  }
+}
+
+const notice = p.get('added') ? 'Mailbox saved.' : p.get('deleted') ? 'Mailbox removed.' : null;
+const error = p.get('error');
+const fmtDateTime = (iso: string | null) => (iso ? iso.replace('T', ' ').slice(0, 16) : 'never');
+---
+
+<Base title="Mailboxes · Financing Inbox" active="mailboxes">
+  <h1>Client mailboxes</h1>
+  <p class="sub">IMAP accounts the collector reads invoices from. Passwords are encrypted before they touch the database.</p>
+
+  {dbError && <div class="banner err">{dbError}</div>}
+  {notice && <div class="banner ok">{notice}</div>}
+  {error && <div class="banner err">{error}</div>}
+
+  <section class="panel">
+    <h2>Add / update a mailbox</h2>
+    <form method="post" action="/api/mailboxes">
+      <div class="grid2">
+        <div class="field"><label for="label">Client name</label><input id="label" name="label" placeholder="Acme S.A." /></div>
+        <div class="field"><label for="email">Mailbox email *</label><input id="email" name="email" type="email" required placeholder="facturas@acme.cr" /></div>
+        <div class="field"><label for="host">IMAP host *</label><input id="host" name="host" required value="imap.gmail.com" /></div>
+        <div class="field"><label for="port">Port *</label><input id="port" name="port" type="number" required value="993" /></div>
+        <div class="field"><label for="username">Username *</label><input id="username" name="username" required placeholder="usually the email" /></div>
+        <div class="field"><label for="password">Password / app password *</label><input id="password" name="password" type="password" required autocomplete="off" /></div>
+        <div class="field"><label for="lookbackDays">Look back (days)</label><input id="lookbackDays" name="lookbackDays" type="number" value="30" /></div>
+        <div class="field">
+          <label for="useSsl">Security</label>
+          <select id="useSsl" name="useSsl">
+            <option value="1" selected>SSL/TLS (993)</option>
+            <option value="0">STARTTLS / plain (143)</option>
+          </select>
+        </div>
+      </div>
+      <p style="margin:14px 0 0;"><button class="btn" type="submit">Save mailbox</button></p>
+    </form>
+    <p class="muted" style="margin-bottom:0;">
+      Tip: for Gmail/Workspace accounts use an <strong>app password</strong> (requires 2-step verification), not the login password.
+    </p>
+  </section>
+
+  <section>
+    <h2>Configured mailboxes ({mailboxes.length})</h2>
+    {mailboxes.length > 0 ? (
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Client</th><th>Email</th><th>Host</th><th>Last sync</th><th>Status</th><th></th></tr>
+          </thead>
+          <tbody>
+            {mailboxes.map((m) => (
+              <tr>
+                <td>{m.label || '—'}</td>
+                <td>{m.email}</td>
+                <td class="muted">{m.host}:{m.port}</td>
+                <td class="muted">{fmtDateTime(m.last_synced_at)}</td>
+                <td>
+                  {m.last_status === 'ok' ? <span class="pill ok">ok</span>
+                    : m.last_status ? <span class="pill err" title={m.last_status}>error</span>
+                    : <span class="pill muted">pending</span>}
+                </td>
+                <td class="right">
+                  <form class="inline" method="post" action="/api/mailboxes/delete" onsubmit="return confirm('Remove this mailbox?')">
+                    <input type="hidden" name="id" value={m.id} />
+                    <button class="btn danger sm" type="submit">Delete</button>
+                  </form>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    ) : (
+      !dbError && <div class="panel empty">No mailboxes yet. Add one above, or supply a <code>mailboxes.json</code> to the collector.</div>
+    )}
+  </section>
+
+  <section class="panel" style="margin-top:20px;">
+    <h2>How collection runs</h2>
+    <p class="muted" style="margin-top:0;">
+      A Node “collector” connects to each mailbox over IMAP, downloads the invoice XML plus its matching PDF, extracts the
+      amounts, and stores everything here. It runs on a schedule via GitHub Actions, or on demand with <code>npm run collect</code>.
+      Accounts are processed a few at a time (default 5) to avoid provider rate limits. You can manage mailboxes here, or hand the
+      collector a git-ignored <code>collector/mailboxes.json</code> instead.
+    </p>
+  </section>
+</Base>
