@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<MensajeHacienda xmlns="https://cdn.comprobanteselectronicos.go.cr/xml-schemas/v4.3/mensajeHacienda">
+  <Clave>50624062600400004213900100003010019376680122139243</Clave>
+  <NombreEmisor>INSTITUTO COSTARRICENSE DE ELECTRICIDAD</NombreEmisor>
+  <TipoIdentificacionEmisor>02</TipoIdentificacionEmisor>
+  <NumeroCedulaEmisor>4000042139</NumeroCedulaEmisor>
+  <Mensaje>1</Mensaje>
+  <DetalleMensaje>Comprobante aceptado</DetalleMensaje>
+  <MontoTotalImpuesto>1300.00</MontoTotalImpuesto>
+  <TotalFactura>11300.00</TotalFactura>
+</MensajeHacienda>

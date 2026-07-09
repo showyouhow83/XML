@@ -1,0 +1,14 @@
+# Local secrets for `astro dev`. Copy this file to `.dev.vars` and fill in.
+# `.dev.vars` is git-ignored and must never be committed.
+
+# 32-byte base64 key used to encrypt client IMAP passwords at rest in D1.
+# Generate one with:  openssl rand -base64 32
+TOKEN_ENC_KEY=""
+
+# Shared secret the GitHub Actions collector uses to call /api/collector/*.
+# Generate one with:  openssl rand -hex 32
+INGEST_TOKEN=""
+
+# Optional password gate for the dashboard. If set, visitors must log in first.
+# Leave empty for open access (fine for local dev).
+APP_PASSWORD=""

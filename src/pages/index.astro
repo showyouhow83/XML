@@ -1,17 +1,200 @@
 ---
+import { env } from 'cloudflare:workers';
+import Base from '../layouts/Base.astro';
+import { ensureSchema, listInvoices, filterOptions, overviewStats, type InvoiceFilters } from '../lib/db';
 
+const url = Astro.url;
+const p = url.searchParams;
+
+let dbError: string | null = null;
+let data: Awaited<ReturnType<typeof listInvoices>> | null = null;
+let options = { accounts: [] as string[], docTypes: [] as string[], monedas: [] as string[] };
+let stats = { invoices: 0, withPdf: 0, mailboxes: 0 };
+
+const filters: InvoiceFilters = {
+  q: p.get('q') || undefined,
+  account: p.get('account') || undefined,
+  docType: p.get('docType') || undefined,
+  moneda: p.get('moneda') || undefined,
+  from: p.get('from') || undefined,
+  to: p.get('to') || undefined,
+  hasPdf: p.get('hasPdf') === '1' ? true : p.get('hasPdf') === '0' ? false : undefined,
+  sort: p.get('sort') || 'fecha',
+  dir: p.get('dir') === 'asc' ? 'asc' : 'desc',
+  offset: Number(p.get('offset') || 0),
+  limit: 100,
+};
+
+if (!env.DB) {
+  dbError = 'D1 database binding "DB" not found. Run `npx wrangler d1 create financing-invoices`, paste the id into wrangler.jsonc, then restart.';
+} else {
+  try {
+    await ensureSchema(env.DB);
+    [data, options, stats] = await Promise.all([
+      listInvoices(env.DB, filters),
+      filterOptions(env.DB),
+      overviewStats(env.DB),
+    ]);
+  } catch (err) {
+    dbError = (err as Error).message;
+  }
+}
+
+// --- helpers ---
+const money = (n: number | null, moneda: string | null) => {
+  if (n == null) return '—';
+  try {
+    return new Intl.NumberFormat('es-CR', {
+      style: 'currency',
+      currency: moneda || 'CRC',
+      maximumFractionDigits: 2,
+    }).format(n);
+  } catch {
+    return `${(moneda || '')} ${n.toFixed(2)}`.trim();
+  }
+};
+const fmtDate = (iso: string | null) => (iso ? iso.slice(0, 10) : '—');
+
+function qs(overrides: Record<string, string | number | undefined>) {
+  const next = new URLSearchParams(url.search);
+  for (const [k, v] of Object.entries(overrides)) {
+    if (v === undefined || v === '') next.delete(k);
+    else next.set(k, String(v));
+  }
+  return `?${next.toString()}`;
+}
+function sortLink(key: string, label: string) {
+  const isActive = filters.sort === key;
+  const nextDir = isActive && filters.dir === 'desc' ? 'asc' : 'desc';
+  const arrow = isActive ? (filters.dir === 'desc' ? ' ↓' : ' ↑') : '';
+  return { href: qs({ sort: key, dir: nextDir, offset: 0 }), label: label + arrow };
+}
+
+const exportHref = `/api/export${qs({ offset: undefined, limit: undefined })}`;
+const offset = data?.offset ?? 0;
+const limit = data?.limit ?? 100;
+const total = data?.total ?? 0;
+const showingTo = Math.min(offset + limit, total);
 ---
 
-<html lang="en">
-	<head>
-		<meta charset="utf-8" />
-		<link rel="icon" type="image/svg+xml" href={`${import.meta.env.BASE_URL}/favicon.svg`} />
-		<link rel="icon" href={`${import.meta.env.BASE_URL}/favicon.ico`} />
-		<meta name="viewport" content="width=device-width" />
-		<meta name="generator" content={Astro.generator} />
-		<title>Astro</title>
-	</head>
-	<body>
-		<h1>Astro</h1>
-	</body>
-</html>
+<Base title="Dashboard · Financing Inbox" active="dashboard">
+  <h1>Invoice dashboard</h1>
+  <p class="sub">Electronic invoices (XML) collected from your client mailboxes, with matched PDFs.</p>
+
+  {dbError && <div class="banner err">{dbError}</div>}
+
+  <section class="cards">
+    <div class="card"><div class="label">Invoices</div><div class="value">{stats.invoices.toLocaleString()}</div></div>
+    <div class="card"><div class="label">With PDF</div><div class="value">{stats.withPdf.toLocaleString()}</div></div>
+    <div class="card"><div class="label">Mailboxes</div><div class="value">{stats.mailboxes.toLocaleString()}</div></div>
+    {(data?.currencyTotals ?? []).map((c) => (
+      <div class="card">
+        <div class="label">Total {c.moneda || '—'} ({c.count})</div>
+        <div class="value sm">{money(c.total, c.moneda)}</div>
+      </div>
+    ))}
+  </section>
+
+  <form class="panel filters" method="get">
+    <div class="field" style="flex:1 1 200px;">
+      <label for="q">Search</label>
+      <input id="q" type="search" name="q" value={filters.q ?? ''} placeholder="Issuer, ID, clave, consecutivo…" />
+    </div>
+    <div class="field">
+      <label for="account">Mailbox</label>
+      <select id="account" name="account">
+        <option value="">All</option>
+        {options.accounts.map((a) => <option value={a} selected={filters.account === a}>{a}</option>)}
+      </select>
+    </div>
+    <div class="field">
+      <label for="docType">Type</label>
+      <select id="docType" name="docType">
+        <option value="">All</option>
+        {options.docTypes.map((t) => <option value={t} selected={filters.docType === t}>{t}</option>)}
+      </select>
+    </div>
+    <div class="field">
+      <label for="moneda">Currency</label>
+      <select id="moneda" name="moneda">
+        <option value="">All</option>
+        {options.monedas.map((m) => <option value={m} selected={filters.moneda === m}>{m}</option>)}
+      </select>
+    </div>
+    <div class="field"><label for="from">From</label><input id="from" type="date" name="from" value={filters.from ?? ''} /></div>
+    <div class="field"><label for="to">To</label><input id="to" type="date" name="to" value={filters.to ?? ''} /></div>
+    <div class="field">
+      <label for="hasPdf">PDF</label>
+      <select id="hasPdf" name="hasPdf">
+        <option value="">Any</option>
+        <option value="1" selected={p.get('hasPdf') === '1'}>Has PDF</option>
+        <option value="0" selected={p.get('hasPdf') === '0'}>Missing PDF</option>
+      </select>
+    </div>
+    <input type="hidden" name="sort" value={filters.sort} />
+    <input type="hidden" name="dir" value={filters.dir} />
+    <button class="btn" type="submit">Apply</button>
+    <a class="btn secondary" href="/">Reset</a>
+    <a class="btn secondary" href={exportHref}>Export CSV</a>
+  </form>
+
+  {data && data.rows.length > 0 ? (
+    <>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th><a href={sortLink('fecha', 'Date').href}>{sortLink('fecha', 'Date').label}</a></th>
+              <th>Type</th>
+              <th><a href={sortLink('emisor', 'Issuer').href}>{sortLink('emisor', 'Issuer').label}</a></th>
+              <th>Consecutivo</th>
+              <th>Mailbox</th>
+              <th>Cur.</th>
+              <th class="right"><a href={sortLink('impuesto', 'Tax').href}>{sortLink('impuesto', 'Tax').label}</a></th>
+              <th class="right"><a href={sortLink('total', 'Total').href}>{sortLink('total', 'Total').label}</a></th>
+              <th>Files</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.rows.map((r) => (
+              <tr>
+                <td>{fmtDate(r.fecha_emision)}</td>
+                <td>{r.doc_type}</td>
+                <td title={r.emisor_id}>{r.emisor_nombre || '—'}</td>
+                <td class="muted">{r.consecutivo}</td>
+                <td class="muted">{r.source_account}</td>
+                <td>{r.moneda}</td>
+                <td class="num">{money(r.total_impuesto, r.moneda)}</td>
+                <td class="num"><strong>{money(r.total_comprobante, r.moneda)}</strong></td>
+                <td>
+                  <div class="rowactions">
+                    <a class="btn secondary sm" href={`/api/download?clave=${encodeURIComponent(r.clave)}&type=xml`}>XML</a>
+                    {r.has_pdf ? (
+                      <a class="btn secondary sm" href={`/api/download?clave=${encodeURIComponent(r.clave)}&type=pdf`}>PDF</a>
+                    ) : (
+                      <span class="pill muted">no PDF</span>
+                    )}
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div class="pager">
+        <span>Showing {total === 0 ? 0 : offset + 1}–{showingTo} of {total.toLocaleString()}</span>
+        <span>
+          {offset > 0 && <a class="btn secondary sm" href={qs({ offset: Math.max(0, offset - limit) })}>← Prev</a>}
+          {offset + limit < total && <a class="btn secondary sm" href={qs({ offset: offset + limit })}>Next →</a>}
+        </span>
+      </div>
+    </>
+  ) : (
+    !dbError && (
+      <div class="panel empty">
+        No invoices yet. Add client mailboxes on the <a href="/mailboxes">Mailboxes</a> page, then run the collector
+        (<code>npm run collect</code> or the scheduled GitHub Action).
+      </div>
+    )
+  )}
+</Base>

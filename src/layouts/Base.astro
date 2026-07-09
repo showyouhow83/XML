@@ -1,0 +1,41 @@
+---
+import { env } from 'cloudflare:workers';
+import '../styles/app.css';
+interface Props {
+  title?: string;
+  active?: 'dashboard' | 'mailboxes';
+  nav?: boolean;
+}
+const { title = 'Financing Inbox', active, nav = true } = Astro.props;
+const gated = Boolean(env.APP_PASSWORD);
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>{title}</title>
+  </head>
+  <body>
+    {nav && (
+      <header class="topnav">
+        <div class="brand">📄 Financing <span>Inbox</span></div>
+        <nav>
+          <a href="/" class={active === 'dashboard' ? 'active' : ''}>Dashboard</a>
+          <a href="/mailboxes" class={active === 'mailboxes' ? 'active' : ''}>Mailboxes</a>
+          {gated && (
+            <form method="post" action="/api/logout" class="inline">
+              <button type="submit" class="btn secondary sm">Sign out</button>
+            </form>
+          )}
+        </nav>
+      </header>
+    )}
+    <main>
+      <slot />
+    </main>
+  </body>
+</html>

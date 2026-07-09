@@ -16,6 +16,15 @@ pnpm-debug.log*
 # environment variables
 .env
 .env.production
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+
+# cloudflare / wrangler
+.wrangler/
+
+# collector mailbox list (contains IMAP passwords — never commit)
+collector/mailboxes.json
 
 # macOS-specific files
 .DS_Store
