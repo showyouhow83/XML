@@ -54,7 +54,9 @@ in a Node "collector" on GitHub Actions (nightly cron + on-demand dispatch).
 ## Data model (D1)
 
 - **mailboxes** — id, label, email, host, port, username, `password_enc`
-  (AES-GCM), use_ssl, lookback_days, active, last_synced_at, last_status.
+  (AES-GCM), use_ssl, lookback_days, active, last_synced_at, last_status,
+  `synced_from` (oldest date covered), `last_uid` + `uidvalidity` (incremental
+  IMAP watermark — highest UID already pulled, so re-runs fetch only new mail).
 - **invoices** — `clave` (PK), doc_type, consecutivo, fecha_emision, emisor_* ,
   receptor_* , moneda, tipo_cambio, `iva_rate`, condicion_venta, codigo_actividad,
   totals (gravado / exento / exonerado / descuentos / venta_neta / impuesto /
@@ -76,6 +78,8 @@ Worker (Cloudflare → `xml` → Settings → Variables and Secrets):
 - `APP_PASSWORD` — dashboard login gate (optional).
 - `GH_DISPATCH_TOKEN` — GitHub fine-grained token (Actions read+write) so the
   "Collect now" button can trigger the workflow.
+- `ANTHROPIC_API_KEY` — Claude API key powering the **Ask AI** page (optional; the
+  page shows a "not configured" notice until it's set).
 
 GitHub repo → Settings → Secrets → Actions:
 - `APP_URL` = https://xml.showyouhow83.workers.dev
@@ -93,8 +97,13 @@ GitHub repo → Settings → Secrets → Actions:
   nightly cron defaults to 2 years.
 - Mailboxes page: invoice count per mailbox + live **⟳ collecting… / ✓ up to
   date** status (auto-refreshes during a run).
-- Collection runs on GitHub's servers (safe to leave the page); re-runs dedupe by
-  `clave`, so they only add new invoices.
+- Collection runs on GitHub's servers (safe to leave the page). After a mailbox's
+  first pull it syncs **incrementally** — only new mail (by IMAP `UID`) — so
+  nothing already stored is re-fetched; `clave` also guarantees no duplicates. A
+  **“re-scan all”** toggle forces a full re-read.
+- **Ask AI** page: ask in plain language → Claude writes a read-only SQL query
+  over `invoices`, runs it on D1, and explains the answer (shows the SQL + rows).
+  Needs the `ANTHROPIC_API_KEY` secret.
 
 ## Roadmap (where we're going)
 
@@ -103,14 +112,19 @@ Near-term:
 - [ ] In-app live progress (emails found / imported) — needs the collector to
       stream progress to an endpoint the dashboard polls.
 - [x] Faster nightly runs — scheduled runs use a 30-day rolling window; the deep
-      backfill is on demand. (True incremental by `last_synced_at` is a later
-      refinement.)
+      backfill is on demand.
+- [x] **True incremental sync** — after a mailbox's first pull, runs fetch only
+      new mail by IMAP `UID` (guarded by `UIDVALIDITY`); nothing already stored is
+      re-downloaded or re-written. A **“re-scan all”** toggle forces a full
+      re-read (use after extractor changes).
 - [x] "Customer data complete through <date>" — Mailboxes shows **covers back to
       <date>** per customer (`synced_from`).
 
 Later:
-- [ ] **AI agent** to query the data in natural language
-      ("total IVA paid to Liberty in Q2", "gastos by vendor this month").
+- [x] **AI agent** to query the data in natural language ("total IVA paid to
+      Liberty in Q2", "gastos by vendor this month") — the **Ask AI** page
+      (text→SQL→answer). Next refinements: charts, saved questions, multi-step
+      reasoning across line items.
 - [ ] Line-item-level table + CSV (analysis across all invoices).
 - [ ] Reporting / period summaries per client (for tax filing).
 - [ ] R2 for PDF storage at scale (currently base64 in D1).
@@ -130,6 +144,16 @@ Later:
 
 ## Changelog (newest first)
 
+- **#14** **Incremental collection** — the collector now remembers the highest
+  IMAP `UID` pulled per mailbox (`last_uid` + `uidvalidity`) and, after the first
+  sync, fetches only newer messages. No re-downloading or re-writing of invoices
+  you already have; `clave` still guarantees no duplicates. New **“re-scan all”**
+  dashboard toggle (+ `full_rescan` workflow input) forces a full re-read after
+  extractor changes.
+- **#13** **Ask AI** page — natural-language questions over the invoices. Claude
+  (`claude-opus-4-8`) writes a read-only `SELECT` (validated: single statement,
+  `invoices` table only, no writes/creds/blobs), runs it on D1, and summarizes
+  the rows. New: `src/lib/ai.ts`, `/api/ask`, `/ask`. Needs `ANTHROPIC_API_KEY`.
 - **#12** Faster nightly sync (30-day rolling window) + per-mailbox "covers back
   to <date>" signal (`synced_from`).
 - **#10** Collect date picker (how-far-back) + live per-mailbox status/progress.

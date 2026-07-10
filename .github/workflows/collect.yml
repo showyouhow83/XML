@@ -7,9 +7,13 @@ on:
   workflow_dispatch: # manual / dashboard-triggered runs
     inputs:
       lookback_days:
-        description: 'How many days back to search each mailbox'
+        description: 'For the FIRST scan / a full re-scan: how many days back to search'
         required: false
         default: '730'
+      full_rescan:
+        description: 'Re-scan the whole window even for mailboxes already synced (use after an extractor change). 1 = yes'
+        required: false
+        default: '0'
 
 jobs:
   collect:
@@ -18,11 +22,14 @@ jobs:
       APP_URL: ${{ secrets.APP_URL }}
       INGEST_TOKEN: ${{ secrets.INGEST_TOKEN }}
       CONCURRENCY: '5'
-      # How far back to search each mailbox, in days. Uses the value chosen when
-      # triggered (dashboard "how far back" / manual). Scheduled nightly runs use
-      # a short 30-day window to stay fast — the initial backfill is done on
-      # demand with a bigger window, and re-runs dedupe by clave.
+      # Collection is incremental: after a mailbox's first sync, runs fetch only
+      # NEW mail (by IMAP UID), so LOOKBACK_DAYS only bounds the first scan or a
+      # forced full re-scan. Nightly cron falls back to a 30-day window for any
+      # not-yet-synced mailbox; already-synced ones just pull new mail.
       LOOKBACK_DAYS: ${{ github.event.inputs.lookback_days || '30' }}
+      # 1 = re-scan the whole window even for already-synced mailboxes (after an
+      # extractor change, so old invoices re-extract with the new fields).
+      FULL_RESCAN: ${{ github.event.inputs.full_rescan || '0' }}
       # Optional: paste a full mailboxes JSON array as a secret to use the
       # file-based list instead of the mailboxes stored in the app.
       MAILBOXES_JSON: ${{ secrets.MAILBOXES_JSON }}

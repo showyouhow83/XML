@@ -35,6 +35,10 @@ const INGEST_TOKEN = process.env.INGEST_TOKEN || '';
 const CONCURRENCY = Math.max(1, Number(process.env.CONCURRENCY || 5));
 const LOOKBACK_OVERRIDE = process.env.LOOKBACK_DAYS ? Number(process.env.LOOKBACK_DAYS) : undefined;
 const DRY_RUN = process.argv.includes('--dry-run') || process.env.DRY_RUN === '1';
+// Force a full re-scan of the look-back window instead of only fetching new mail.
+// Use after an extractor change so old invoices are re-read with the new fields.
+const FORCE_FULL =
+  process.argv.includes('--full') || process.env.FULL_RESCAN === '1' || process.env.FULL_RESCAN === 'true';
 
 interface Mailbox {
   id?: number;
@@ -46,6 +50,9 @@ interface Mailbox {
   password: string;
   useSsl?: boolean;
   lookbackDays?: number;
+  // Incremental-sync watermark from the app (absent for file-based mailboxes).
+  lastUid?: number | null;
+  uidvalidity?: number | null;
 }
 
 function fail(msg: string): never {
@@ -79,7 +86,12 @@ async function loadMailboxes(): Promise<Mailbox[]> {
   return body.mailboxes || [];
 }
 
-async function postIngest(mailbox: Mailbox, records: OutRecord[], status: string, syncedFrom?: string) {
+async function postIngest(
+  mailbox: Mailbox,
+  records: OutRecord[],
+  status: string,
+  opts: { syncedFrom?: string; lastUid?: number; uidvalidity?: number } = {}
+) {
   if (!APP_URL || !INGEST_TOKEN) {
     console.warn('  (APP_URL/INGEST_TOKEN not set — cannot push to app; skipping ingest)');
     return;
@@ -88,13 +100,16 @@ async function postIngest(mailbox: Mailbox, records: OutRecord[], status: string
   for (let i = 0; i < Math.max(records.length, 1); i += chunkSize) {
     const chunk = records.slice(i, i + chunkSize);
     const isLast = i + chunkSize >= records.length;
+    // The sync watermark + status ride along on the final chunk only.
     const res = await fetch(`${APP_URL}/api/collector/ingest`, {
       method: 'POST',
       headers: { authorization: `Bearer ${INGEST_TOKEN}`, 'content-type': 'application/json' },
       body: JSON.stringify({
         mailboxId: typeof mailbox.id === 'number' ? mailbox.id : undefined,
         status: isLast ? status : undefined,
-        syncedFrom: isLast ? syncedFrom : undefined,
+        syncedFrom: isLast ? opts.syncedFrom : undefined,
+        lastUid: isLast ? opts.lastUid : undefined,
+        uidvalidity: isLast ? opts.uidvalidity : undefined,
         records: chunk,
       }),
     });
@@ -133,8 +148,26 @@ async function collectMailbox(mailbox: Mailbox): Promise<{ found: number; error?
   try {
     await client.connect();
     const lock = await client.getMailboxLock('INBOX');
+    // UIDVALIDITY changes only when the server renumbers the folder; if it still
+    // matches what we stored, UIDs are stable and we can fetch only new mail.
+    const mb: any = client.mailbox;
+    const currentUidValidity = mb && mb.uidValidity != null ? Number(mb.uidValidity) : 0;
+    const canIncremental =
+      !FORCE_FULL &&
+      typeof mailbox.lastUid === 'number' &&
+      typeof mailbox.uidvalidity === 'number' &&
+      currentUidValidity !== 0 &&
+      mailbox.uidvalidity === currentUidValidity;
+
+    let uids: number[] = [];
     try {
-      const uids = (await client.search({ since }, { uid: true })) || [];
+      if (canIncremental) {
+        // "N:*" always returns the highest UID even if none are >= N, so filter.
+        const raw = (await client.search({ uid: `${mailbox.lastUid! + 1}:*` }, { uid: true })) || [];
+        uids = raw.filter((u) => u > (mailbox.lastUid as number));
+      } else {
+        uids = (await client.search({ since }, { uid: true })) || [];
+      }
       if (uids.length) {
         for await (const msg of client.fetch(
           uids.join(','),
@@ -160,12 +193,27 @@ async function collectMailbox(mailbox: Mailbox): Promise<{ found: number; error?
       lock.release();
     }
     await client.logout();
+
+    // New high-water mark. In a full scan we rebaseline from 0 (handles a changed
+    // UIDVALIDITY); in an incremental run we can only move it forward.
+    const base = canIncremental ? (mailbox.lastUid as number) : 0;
+    const newMaxUid = uids.reduce((m, u) => (u > m ? u : m), base);
     const withPdf = records.filter((r) => r.pdfContentBase64).length;
+
     if (DRY_RUN) {
-      console.log(`  ○ ${name}: would store ${records.length} invoice(s) [${withPdf} with PDF] — dry run`);
+      const mode = canIncremental ? 'incremental' : FORCE_FULL ? 'full re-scan' : 'full';
+      console.log(`  ○ ${name}: would store ${records.length} invoice(s) [${withPdf} with PDF] — ${mode}, dry run`);
     } else {
-      await postIngest(mailbox, records, 'ok', since.toISOString());
-      console.log(`  ✓ ${name}: ${records.length} invoice(s) [${withPdf} with PDF]`);
+      await postIngest(mailbox, records, 'ok', {
+        // Incremental runs only add new mail, so don't claim more history coverage.
+        syncedFrom: canIncremental ? undefined : since.toISOString(),
+        lastUid: canIncremental ? newMaxUid : uids.length ? newMaxUid : undefined,
+        uidvalidity: currentUidValidity || undefined,
+      });
+      const suffix = canIncremental
+        ? '(new mail only)'
+        : `(full scan since ${since.toISOString().slice(0, 10)})`;
+      console.log(`  ✓ ${name}: ${records.length} invoice(s) [${withPdf} with PDF] ${suffix}`);
     }
     return { found: records.length };
   } catch (err) {
@@ -204,7 +252,8 @@ async function main() {
     return;
   }
   console.log(
-    `${DRY_RUN ? '[DRY RUN] ' : ''}Collecting from ${mailboxes.length} mailbox(es), ${CONCURRENCY} at a time…\n`
+    `${DRY_RUN ? '[DRY RUN] ' : ''}Collecting from ${mailboxes.length} mailbox(es), ${CONCURRENCY} at a time` +
+      `${FORCE_FULL ? ' — FULL RE-SCAN (ignoring saved position)' : ' (only new mail after the first run)'}…\n`
   );
   const results = await pool(mailboxes, CONCURRENCY, collectMailbox);
 

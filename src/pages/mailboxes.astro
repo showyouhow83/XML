@@ -110,8 +110,11 @@ const anyCollecting = mailboxes.some((m) => (m.last_status || '').toLowerCase().
       A “collector” connects to each mailbox over IMAP, downloads the invoice XML + matching PDF, extracts the data, and stores
       it here. Trigger it with <strong>Collect now</strong> on the dashboard (pick how far back), or it runs nightly. It runs on
       GitHub's servers, so <strong>you can close this page</strong> — it won't stop. Status shows <span class="pill warn">⟳ collecting…</span>
-      while a run is in progress and <span class="pill ok">✓ up to date</span> when a mailbox is fully pulled. Re-running only
-      adds new invoices (existing ones are de-duplicated), so it's safe to run anytime.
+      while a run is in progress and <span class="pill ok">✓ up to date</span> when a mailbox is fully pulled.
+      The first pull uses the “how far back” window; after that, runs are <strong>incremental</strong> — they fetch only
+      <strong>new mail</strong>, so nothing you already have is downloaded or written again. Invoices are keyed by their Hacienda
+      <code>clave</code>, so you can never get duplicates. Tick <strong>“re-scan all”</strong> on the dashboard only when you want
+      to re-read everything again (e.g. after we add new extracted fields).
     </p>
   </section>
 
