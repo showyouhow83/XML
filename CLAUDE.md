@@ -102,9 +102,11 @@ Near-term:
 - [ ] Per-mailbox editable "how far back" (not only the global picker).
 - [ ] In-app live progress (emails found / imported) — needs the collector to
       stream progress to an endpoint the dashboard polls.
-- [ ] Incremental sync — fetch only emails newer than `last_synced_at` for faster
-      nightly runs (currently re-scans the whole window and dedupes).
-- [ ] "Customer data complete through <date>" signal.
+- [x] Faster nightly runs — scheduled runs use a 30-day rolling window; the deep
+      backfill is on demand. (True incremental by `last_synced_at` is a later
+      refinement.)
+- [x] "Customer data complete through <date>" — Mailboxes shows **covers back to
+      <date>** per customer (`synced_from`).
 
 Later:
 - [ ] **AI agent** to query the data in natural language
@@ -128,6 +130,8 @@ Later:
 
 ## Changelog (newest first)
 
+- **#12** Faster nightly sync (30-day rolling window) + per-mailbox "covers back
+  to <date>" signal (`synced_from`).
 - **#10** Collect date picker (how-far-back) + live per-mailbox status/progress.
 - **#9** "Collect now" button (dashboard-triggered) + group/filter by issuer cédula.
 - **#8** Collector looks back 2 years by default (backfill history).
