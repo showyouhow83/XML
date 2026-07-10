@@ -79,7 +79,7 @@ async function loadMailboxes(): Promise<Mailbox[]> {
   return body.mailboxes || [];
 }
 
-async function postIngest(mailbox: Mailbox, records: OutRecord[], status: string) {
+async function postIngest(mailbox: Mailbox, records: OutRecord[], status: string, syncedFrom?: string) {
   if (!APP_URL || !INGEST_TOKEN) {
     console.warn('  (APP_URL/INGEST_TOKEN not set — cannot push to app; skipping ingest)');
     return;
@@ -94,6 +94,7 @@ async function postIngest(mailbox: Mailbox, records: OutRecord[], status: string
       body: JSON.stringify({
         mailboxId: typeof mailbox.id === 'number' ? mailbox.id : undefined,
         status: isLast ? status : undefined,
+        syncedFrom: isLast ? syncedFrom : undefined,
         records: chunk,
       }),
     });
@@ -118,6 +119,7 @@ async function postStatus(mailbox: Mailbox, status: string) {
 async function collectMailbox(mailbox: Mailbox): Promise<{ found: number; error?: string }> {
   const name = mailbox.label || mailbox.email;
   const lookback = LOOKBACK_OVERRIDE ?? mailbox.lookbackDays ?? 30;
+  const since = new Date(Date.now() - lookback * 86400000);
   const client = new ImapFlow({
     host: mailbox.host,
     port: mailbox.port || 993,
@@ -132,7 +134,6 @@ async function collectMailbox(mailbox: Mailbox): Promise<{ found: number; error?
     await client.connect();
     const lock = await client.getMailboxLock('INBOX');
     try {
-      const since = new Date(Date.now() - lookback * 86400000);
       const uids = (await client.search({ since }, { uid: true })) || [];
       if (uids.length) {
         for await (const msg of client.fetch(
@@ -163,7 +164,7 @@ async function collectMailbox(mailbox: Mailbox): Promise<{ found: number; error?
     if (DRY_RUN) {
       console.log(`  ○ ${name}: would store ${records.length} invoice(s) [${withPdf} with PDF] — dry run`);
     } else {
-      await postIngest(mailbox, records, 'ok');
+      await postIngest(mailbox, records, 'ok', since.toISOString());
       console.log(`  ✓ ${name}: ${records.length} invoice(s) [${withPdf} with PDF]`);
     }
     return { found: records.length };

@@ -1,9 +1,9 @@
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
-import { ensureSchema, upsertInvoice, setMailboxStatus, type IngestRecord } from '../../../lib/db';
+import { ensureSchema, upsertInvoice, recordSync, type IngestRecord } from '../../../lib/db';
 
 // Receives extracted invoices from the collector and stores them.
-// Body: { mailboxId?: number, status?: string, records: IngestRecord[] }
+// Body: { mailboxId?: number, status?: string, syncedFrom?: string, records: IngestRecord[] }
 export const POST: APIRoute = async ({ request }) => {
   await ensureSchema(env.DB);
 
@@ -35,7 +35,11 @@ export const POST: APIRoute = async ({ request }) => {
 
   if (typeof body?.mailboxId === 'number') {
     const status = body.status || (errors.length ? `partial: ${errors.length} error(s)` : 'ok');
-    await setMailboxStatus(env.DB, body.mailboxId, status, new Date().toISOString());
+    await recordSync(env.DB, body.mailboxId, {
+      status,
+      syncedAt: new Date().toISOString(),
+      syncedFrom: typeof body?.syncedFrom === 'string' ? body.syncedFrom : null,
+    });
   }
 
   return Response.json({ inserted, updated, failed: errors.length, errors });

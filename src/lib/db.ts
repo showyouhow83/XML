@@ -13,7 +13,7 @@ const SCHEMA: string[] = [
     port INTEGER NOT NULL DEFAULT 993, username TEXT NOT NULL,
     password_enc TEXT NOT NULL, use_ssl INTEGER NOT NULL DEFAULT 1,
     lookback_days INTEGER NOT NULL DEFAULT 30, active INTEGER NOT NULL DEFAULT 1,
-    last_synced_at TEXT, last_status TEXT, created_at TEXT NOT NULL
+    last_synced_at TEXT, last_status TEXT, synced_from TEXT, created_at TEXT NOT NULL
   )`,
   `CREATE TABLE IF NOT EXISTS invoices (
     clave TEXT PRIMARY KEY, doc_type TEXT, doc_type_raw TEXT, consecutivo TEXT,
@@ -43,13 +43,19 @@ const ADDED_INVOICE_COLUMNS: Array<[string, string]> = [
   ['total_exonerado', 'REAL'], ['total_otros_cargos', 'REAL'], ['detail_json', 'TEXT'],
 ];
 
+const ADDED_MAILBOX_COLUMNS: Array<[string, string]> = [['synced_from', 'TEXT']];
+
 let schemaReady = false;
 export async function ensureSchema(db: D1Database): Promise<void> {
   if (schemaReady) return;
   await db.batch(SCHEMA.map((sql) => db.prepare(sql)));
-  for (const [col, type] of ADDED_INVOICE_COLUMNS) {
+  const alters: Array<[string, string, string]> = [
+    ...ADDED_INVOICE_COLUMNS.map(([c, t]) => ['invoices', c, t] as [string, string, string]),
+    ...ADDED_MAILBOX_COLUMNS.map(([c, t]) => ['mailboxes', c, t] as [string, string, string]),
+  ];
+  for (const [table, col, type] of alters) {
     try {
-      await db.prepare(`ALTER TABLE invoices ADD COLUMN ${col} ${type}`).run();
+      await db.prepare(`ALTER TABLE ${table} ADD COLUMN ${col} ${type}`).run();
     } catch {
       // column already exists — fine
     }
@@ -72,6 +78,7 @@ export interface MailboxRow {
   active: number;
   last_synced_at: string | null;
   last_status: string | null;
+  synced_from: string | null;
   created_at: string;
 }
 
@@ -87,7 +94,7 @@ export interface MailboxInput {
 }
 
 const MAILBOX_PUBLIC_COLS =
-  'id, label, email, host, port, username, use_ssl, lookback_days, active, last_synced_at, last_status, created_at';
+  'id, label, email, host, port, username, use_ssl, lookback_days, active, last_synced_at, last_status, synced_from, created_at';
 
 export async function listMailboxes(db: D1Database): Promise<MailboxRow[]> {
   const { results } = await db
@@ -183,6 +190,27 @@ export async function setMailboxStatus(
   await db
     .prepare(`UPDATE mailboxes SET last_status = ?, last_synced_at = COALESCE(?, last_synced_at) WHERE id = ?`)
     .bind(status.slice(0, 300), syncedAt ?? null, id)
+    .run();
+}
+
+/** Finalize a sync: set status + last_synced_at, and extend synced_from backward
+ * to the oldest date this run covered (so we know how far the history goes). */
+export async function recordSync(
+  db: D1Database,
+  id: number,
+  opts: { status: string; syncedAt: string; syncedFrom?: string | null }
+): Promise<void> {
+  const from = opts.syncedFrom ?? null;
+  await db
+    .prepare(
+      `UPDATE mailboxes SET last_status = ?, last_synced_at = ?,
+         synced_from = CASE
+           WHEN ? IS NULL THEN synced_from
+           WHEN synced_from IS NULL OR ? < synced_from THEN ?
+           ELSE synced_from END
+       WHERE id = ?`
+    )
+    .bind(opts.status.slice(0, 300), opts.syncedAt, from, from, from, id)
     .run();
 }
 

@@ -74,7 +74,7 @@ const anyCollecting = mailboxes.some((m) => (m.last_status || '').toLowerCase().
       <div class="table-wrap">
         <table>
           <thead>
-            <tr><th>Client</th><th>Email</th><th class="right">Invoices</th><th>Last sync</th><th>Status</th><th></th></tr>
+            <tr><th>Client</th><th>Email</th><th class="right">Invoices</th><th>Covers back to</th><th>Last sync</th><th>Status</th><th></th></tr>
           </thead>
           <tbody>
             {mailboxes.map((m) => {
@@ -84,6 +84,7 @@ const anyCollecting = mailboxes.some((m) => (m.last_status || '').toLowerCase().
                   <td>{m.label || '—'}</td>
                   <td>{m.email}</td>
                   <td class="num">{(counts[m.email] ?? 0).toLocaleString()}</td>
+                  <td class="muted">{m.synced_from ? m.synced_from.slice(0, 10) : '—'}</td>
                   <td class="muted">{fmtDateTime(m.last_synced_at)}</td>
                   <td><span class={`pill ${si.cls}`} title={si.title}>{si.text}</span></td>
                   <td class="right">
