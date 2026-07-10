@@ -21,6 +21,7 @@
     "db:migrate:local": "wrangler d1 migrations apply financing-invoices --local"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.111.0",
     "@astrojs/cloudflare": "^14.1.2",
     "astro": "^7.0.0",
     "fast-xml-parser": "^5.9.3",

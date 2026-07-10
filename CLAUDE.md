@@ -76,6 +76,8 @@ Worker (Cloudflare → `xml` → Settings → Variables and Secrets):
 - `APP_PASSWORD` — dashboard login gate (optional).
 - `GH_DISPATCH_TOKEN` — GitHub fine-grained token (Actions read+write) so the
   "Collect now" button can trigger the workflow.
+- `ANTHROPIC_API_KEY` — Claude API key powering the **Ask AI** page (optional; the
+  page shows a "not configured" notice until it's set).
 
 GitHub repo → Settings → Secrets → Actions:
 - `APP_URL` = https://xml.showyouhow83.workers.dev
@@ -95,6 +97,9 @@ GitHub repo → Settings → Secrets → Actions:
   date** status (auto-refreshes during a run).
 - Collection runs on GitHub's servers (safe to leave the page); re-runs dedupe by
   `clave`, so they only add new invoices.
+- **Ask AI** page: ask in plain language → Claude writes a read-only SQL query
+  over `invoices`, runs it on D1, and explains the answer (shows the SQL + rows).
+  Needs the `ANTHROPIC_API_KEY` secret.
 
 ## Roadmap (where we're going)
 
@@ -109,8 +114,10 @@ Near-term:
       <date>** per customer (`synced_from`).
 
 Later:
-- [ ] **AI agent** to query the data in natural language
-      ("total IVA paid to Liberty in Q2", "gastos by vendor this month").
+- [x] **AI agent** to query the data in natural language ("total IVA paid to
+      Liberty in Q2", "gastos by vendor this month") — the **Ask AI** page
+      (text→SQL→answer). Next refinements: charts, saved questions, multi-step
+      reasoning across line items.
 - [ ] Line-item-level table + CSV (analysis across all invoices).
 - [ ] Reporting / period summaries per client (for tax filing).
 - [ ] R2 for PDF storage at scale (currently base64 in D1).
@@ -130,6 +137,10 @@ Later:
 
 ## Changelog (newest first)
 
+- **#13** **Ask AI** page — natural-language questions over the invoices. Claude
+  (`claude-opus-4-8`) writes a read-only `SELECT` (validated: single statement,
+  `invoices` table only, no writes/creds/blobs), runs it on D1, and summarizes
+  the rows. New: `src/lib/ai.ts`, `/api/ask`, `/ask`. Needs `ANTHROPIC_API_KEY`.
 - **#12** Faster nightly sync (30-day rolling window) + per-mailbox "covers back
   to <date>" signal (`synced_from`).
 - **#10** Collect date picker (how-far-back) + live per-mailbox status/progress.

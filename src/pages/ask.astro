@@ -1,0 +1,187 @@
+---
+import { env } from 'cloudflare:workers';
+import Base from '../layouts/Base.astro';
+import { ensureSchema, overviewStats } from '../lib/db';
+
+const configured = Boolean(env.ANTHROPIC_API_KEY);
+
+let stats = { invoices: 0, withPdf: 0, mailboxes: 0 };
+let dbError: string | null = null;
+if (env.DB) {
+  try {
+    await ensureSchema(env.DB);
+    stats = await overviewStats(env.DB);
+  } catch (err) {
+    dbError = (err as Error).message;
+  }
+}
+
+const examples = [
+  'Total IVA paid, by currency, this year',
+  'Top 5 vendors by total spend',
+  'How much did I spend with Liberty in 2025?',
+  'Count of invoices per month in 2025',
+  'Invoices over ₡500,000, newest first',
+  'Total spend grouped by issuer cédula',
+];
+---
+
+<Base title="Ask AI · Financing Inbox" active="ask">
+  <h1>Ask your invoices</h1>
+  <p class="sub">Ask a question in plain language. Claude (Opus) writes a read-only query against your {stats.invoices.toLocaleString()} stored invoice(s), double-checks it, runs it, and explains the answer — showing the exact query and rows so you can verify every number.</p>
+
+  {!configured && (
+    <div class="banner err">
+      AI isn’t configured yet. Add an <code>ANTHROPIC_API_KEY</code> secret to the <strong>xml</strong> Worker
+      (Cloudflare → Settings → Variables and Secrets), then reload.
+    </div>
+  )}
+  {dbError && <div class="banner err">{dbError}</div>}
+
+  <section class="panel">
+    <form id="ask-form">
+      <div class="field" style="gap:6px;">
+        <label for="question">Your question</label>
+        <textarea id="question" name="question" rows="2" placeholder="e.g. Total IVA paid to Liberty in 2025, by currency"
+          style="font:inherit; padding:9px 11px; border:1px solid var(--line); border-radius:8px; background:#fff; color:var(--ink); resize:vertical; width:100%;"></textarea>
+      </div>
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-top:10px; flex-wrap:wrap;">
+        <div class="chips" id="chips" style="display:flex; flex-wrap:wrap; gap:6px;">
+          {examples.map((ex) => (
+            <button type="button" class="btn secondary sm chip" data-q={ex}>{ex}</button>
+          ))}
+        </div>
+        <button class="btn" id="ask-btn" type="submit" disabled={!configured}>Ask</button>
+      </div>
+    </form>
+  </section>
+
+  <div id="status" class="muted" style="display:none; margin-bottom:16px;"></div>
+  <div id="error" class="banner err" style="display:none;"></div>
+
+  <section id="answer-panel" class="panel" style="display:none;">
+    <h2>Answer</h2>
+    <div id="answer" style="white-space:pre-wrap; font-size:15px; line-height:1.6;"></div>
+    <details id="sql-details" open style="margin-top:14px; display:none;">
+      <summary class="muted" style="cursor:pointer; font-size:13px;">Query used (click to verify)</summary>
+      <pre id="sql" style="overflow-x:auto; background:#f3f4f6; padding:10px 12px; border-radius:8px; margin:8px 0 0; font-size:12px; white-space:pre;"></pre>
+    </details>
+  </section>
+
+  <section id="rows-panel" style="display:none;">
+    <h2 id="rows-title" style="margin-bottom:8px;">Rows</h2>
+    <div class="table-wrap">
+      <table id="rows-table"><thead></thead><tbody></tbody></table>
+    </div>
+  </section>
+
+  <script is:inline>
+    (function () {
+      const form = document.getElementById('ask-form');
+      const input = document.getElementById('question');
+      const btn = document.getElementById('ask-btn');
+      const statusEl = document.getElementById('status');
+      const errorEl = document.getElementById('error');
+      const answerPanel = document.getElementById('answer-panel');
+      const answerEl = document.getElementById('answer');
+      const sqlDetails = document.getElementById('sql-details');
+      const sqlEl = document.getElementById('sql');
+      const rowsPanel = document.getElementById('rows-panel');
+      const rowsTitle = document.getElementById('rows-title');
+      const table = document.getElementById('rows-table');
+
+      document.getElementById('chips').addEventListener('click', function (e) {
+        const b = e.target.closest('.chip');
+        if (!b) return;
+        input.value = b.getAttribute('data-q');
+        input.focus();
+      });
+
+      function fmtCell(v) {
+        if (v === null || v === undefined) return '—';
+        if (typeof v === 'number') {
+          return Number.isInteger(v) ? v.toLocaleString() : v.toLocaleString(undefined, { maximumFractionDigits: 2 });
+        }
+        return String(v);
+      }
+
+      function renderRows(rows, rowCount, truncated) {
+        const thead = table.querySelector('thead');
+        const tbody = table.querySelector('tbody');
+        thead.innerHTML = '';
+        tbody.innerHTML = '';
+        if (!rows || !rows.length) { rowsPanel.style.display = 'none'; return; }
+        const cols = Object.keys(rows[0]);
+        const htr = document.createElement('tr');
+        cols.forEach(function (c) {
+          const th = document.createElement('th');
+          th.textContent = c;
+          htr.appendChild(th);
+        });
+        thead.appendChild(htr);
+        rows.forEach(function (row) {
+          const tr = document.createElement('tr');
+          cols.forEach(function (c) {
+            const td = document.createElement('td');
+            const v = row[c];
+            td.textContent = fmtCell(v);
+            if (typeof v === 'number') td.className = 'num';
+            tr.appendChild(td);
+          });
+          tbody.appendChild(tr);
+        });
+        rowsTitle.textContent = truncated
+          ? 'Rows (showing ' + rows.length + ' of ' + rowCount.toLocaleString() + ')'
+          : 'Rows (' + rowCount.toLocaleString() + ')';
+        rowsPanel.style.display = '';
+      }
+
+      form.addEventListener('submit', async function (e) {
+        e.preventDefault();
+        const question = input.value.trim();
+        if (!question) return;
+
+        errorEl.style.display = 'none';
+        answerPanel.style.display = 'none';
+        rowsPanel.style.display = 'none';
+        sqlDetails.style.display = 'none';
+        btn.disabled = true;
+        const original = btn.textContent;
+        btn.textContent = 'Thinking…';
+        statusEl.textContent = 'Writing the query, double-checking it, and running it… (a few seconds)';
+        statusEl.style.display = '';
+
+        try {
+          const res = await fetch('/api/ask', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ question: question }),
+          });
+          const data = await res.json();
+          statusEl.style.display = 'none';
+
+          if (data.sql) {
+            sqlEl.textContent = data.sql;
+            sqlDetails.style.display = '';
+          }
+
+          if (!res.ok || data.error) {
+            errorEl.textContent = data.error || ('Request failed (' + res.status + ')');
+            errorEl.style.display = '';
+          } else {
+            answerEl.textContent = data.answer || '(no answer)';
+            answerPanel.style.display = '';
+            renderRows(data.rows, data.rowCount, data.truncated);
+          }
+        } catch (err) {
+          statusEl.style.display = 'none';
+          errorEl.textContent = 'Network error: ' + (err && err.message ? err.message : err);
+          errorEl.style.display = '';
+        } finally {
+          btn.disabled = false;
+          btn.textContent = original;
+        }
+      });
+    })();
+  </script>
+</Base>

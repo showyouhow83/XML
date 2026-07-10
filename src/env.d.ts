@@ -18,6 +18,8 @@ declare namespace Cloudflare {
     // trigger the collector workflow. Plus the "owner/repo" it lives in.
     GH_DISPATCH_TOKEN?: string;
     GITHUB_REPO?: string;
+    // Optional: Anthropic API key powering the "Ask AI" natural-language query page.
+    ANTHROPIC_API_KEY?: string;
   }
 }
 

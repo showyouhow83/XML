@@ -3,7 +3,7 @@ import { env } from 'cloudflare:workers';
 import '../styles/app.css';
 interface Props {
   title?: string;
-  active?: 'dashboard' | 'mailboxes';
+  active?: 'dashboard' | 'ask' | 'mailboxes';
   nav?: boolean;
 }
 const { title = 'Financing Inbox', active, nav = true } = Astro.props;
@@ -25,6 +25,7 @@ const gated = Boolean(env.APP_PASSWORD);
         <div class="brand">📄 Financing <span>Inbox</span></div>
         <nav>
           <a href="/" class={active === 'dashboard' ? 'active' : ''}>Dashboard</a>
+          <a href="/ask" class={active === 'ask' ? 'active' : ''}>Ask AI</a>
           <a href="/mailboxes" class={active === 'mailboxes' ? 'active' : ''}>Mailboxes</a>
           {gated && (
             <form method="post" action="/api/logout" class="inline">
