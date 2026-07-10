@@ -3,7 +3,7 @@ import { env } from 'cloudflare:workers';
 import { ensureSchema, upsertInvoice, recordSync, type IngestRecord } from '../../../lib/db';
 
 // Receives extracted invoices from the collector and stores them.
-// Body: { mailboxId?: number, status?: string, syncedFrom?: string, records: IngestRecord[] }
+// Body: { mailboxId?, status?, syncedFrom?, lastUid?, uidvalidity?, records: IngestRecord[] }
 export const POST: APIRoute = async ({ request }) => {
   await ensureSchema(env.DB);
 
@@ -39,6 +39,8 @@ export const POST: APIRoute = async ({ request }) => {
       status,
       syncedAt: new Date().toISOString(),
       syncedFrom: typeof body?.syncedFrom === 'string' ? body.syncedFrom : null,
+      lastUid: typeof body?.lastUid === 'number' ? body.lastUid : null,
+      uidvalidity: typeof body?.uidvalidity === 'number' ? body.uidvalidity : null,
     });
   }
 

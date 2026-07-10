@@ -13,7 +13,8 @@ const SCHEMA: string[] = [
     port INTEGER NOT NULL DEFAULT 993, username TEXT NOT NULL,
     password_enc TEXT NOT NULL, use_ssl INTEGER NOT NULL DEFAULT 1,
     lookback_days INTEGER NOT NULL DEFAULT 30, active INTEGER NOT NULL DEFAULT 1,
-    last_synced_at TEXT, last_status TEXT, synced_from TEXT, created_at TEXT NOT NULL
+    last_synced_at TEXT, last_status TEXT, synced_from TEXT,
+    last_uid INTEGER, uidvalidity INTEGER, created_at TEXT NOT NULL
   )`,
   `CREATE TABLE IF NOT EXISTS invoices (
     clave TEXT PRIMARY KEY, doc_type TEXT, doc_type_raw TEXT, consecutivo TEXT,
@@ -43,7 +44,9 @@ const ADDED_INVOICE_COLUMNS: Array<[string, string]> = [
   ['total_exonerado', 'REAL'], ['total_otros_cargos', 'REAL'], ['detail_json', 'TEXT'],
 ];
 
-const ADDED_MAILBOX_COLUMNS: Array<[string, string]> = [['synced_from', 'TEXT']];
+const ADDED_MAILBOX_COLUMNS: Array<[string, string]> = [
+  ['synced_from', 'TEXT'], ['last_uid', 'INTEGER'], ['uidvalidity', 'INTEGER'],
+];
 
 let schemaReady = false;
 export async function ensureSchema(db: D1Database): Promise<void> {
@@ -153,13 +156,18 @@ export interface CollectorMailbox {
   useSsl: boolean;
   lookbackDays: number;
   lastSyncedAt: string | null;
+  // Incremental-sync watermark: highest IMAP UID already collected, and the
+  // folder's UIDVALIDITY when we recorded it (if it changes, re-scan fully).
+  lastUid: number | null;
+  uidvalidity: number | null;
 }
 
 /** Active mailboxes with DECRYPTED passwords — only for the authenticated collector. */
 export async function listMailboxesForCollector(db: D1Database, encKey: string): Promise<CollectorMailbox[]> {
   const { results } = await db
     .prepare(
-      `SELECT id, label, email, host, port, username, password_enc, use_ssl, lookback_days, last_synced_at
+      `SELECT id, label, email, host, port, username, password_enc, use_ssl, lookback_days,
+              last_synced_at, last_uid, uidvalidity
        FROM mailboxes WHERE active = 1 ORDER BY id`
     )
     .all<any>();
@@ -176,6 +184,8 @@ export async function listMailboxesForCollector(db: D1Database, encKey: string):
       useSsl: r.use_ssl === 1,
       lookbackDays: r.lookback_days,
       lastSyncedAt: r.last_synced_at,
+      lastUid: r.last_uid ?? null,
+      uidvalidity: r.uidvalidity ?? null,
     });
   }
   return out;
@@ -198,19 +208,29 @@ export async function setMailboxStatus(
 export async function recordSync(
   db: D1Database,
   id: number,
-  opts: { status: string; syncedAt: string; syncedFrom?: string | null }
+  opts: {
+    status: string;
+    syncedAt: string;
+    syncedFrom?: string | null;
+    lastUid?: number | null;
+    uidvalidity?: number | null;
+  }
 ): Promise<void> {
   const from = opts.syncedFrom ?? null;
+  const lastUid = typeof opts.lastUid === 'number' ? opts.lastUid : null;
+  const uidvalidity = typeof opts.uidvalidity === 'number' ? opts.uidvalidity : null;
   await db
     .prepare(
       `UPDATE mailboxes SET last_status = ?, last_synced_at = ?,
          synced_from = CASE
            WHEN ? IS NULL THEN synced_from
            WHEN synced_from IS NULL OR ? < synced_from THEN ?
-           ELSE synced_from END
+           ELSE synced_from END,
+         last_uid = COALESCE(?, last_uid),
+         uidvalidity = COALESCE(?, uidvalidity)
        WHERE id = ?`
     )
-    .bind(opts.status.slice(0, 300), opts.syncedAt, from, from, from, id)
+    .bind(opts.status.slice(0, 300), opts.syncedAt, from, from, from, lastUid, uidvalidity, id)
     .run();
 }
 

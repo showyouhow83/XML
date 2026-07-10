@@ -10,10 +10,12 @@ export const POST: APIRoute = async ({ redirect, request }) => {
   if (!token) return redirect('/?collect=notoken');
 
   let lookback = '730';
+  let fullRescan = '0';
   try {
     const form = await request.formData();
     const v = Number(form.get('lookback'));
     if (Number.isFinite(v) && v > 0) lookback = String(Math.floor(v));
+    if (form.get('full')) fullRescan = '1';
   } catch {
     // no form body — use default
   }
@@ -30,7 +32,7 @@ export const POST: APIRoute = async ({ redirect, request }) => {
           'user-agent': 'financing-inbox',
           'content-type': 'application/json',
         },
-        body: JSON.stringify({ ref: 'main', inputs: { lookback_days: lookback } }),
+        body: JSON.stringify({ ref: 'main', inputs: { lookback_days: lookback, full_rescan: fullRescan } }),
       }
     );
     return redirect(res.status === 204 ? '/?collect=queued' : '/?collect=error');
