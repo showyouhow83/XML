@@ -125,6 +125,16 @@ export async function deleteMailbox(db: D1Database, id: number): Promise<void> {
   await db.prepare(`DELETE FROM mailboxes WHERE id = ?`).bind(id).run();
 }
 
+/** How many invoices we've stored per mailbox address. */
+export async function mailboxInvoiceCounts(db: D1Database): Promise<Record<string, number>> {
+  const { results } = await db
+    .prepare(`SELECT source_account AS email, COUNT(*) AS n FROM invoices WHERE source_account IS NOT NULL GROUP BY source_account`)
+    .all<{ email: string; n: number }>();
+  const out: Record<string, number> = {};
+  for (const r of results ?? []) out[r.email] = r.n;
+  return out;
+}
+
 export interface CollectorMailbox {
   id: number;
   label: string | null;
