@@ -4,7 +4,12 @@ on:
   schedule:
     # Every day at 06:00 UTC (00:00 Costa Rica). Adjust as needed.
     - cron: '0 6 * * *'
-  workflow_dispatch: # allow manual runs from the Actions tab
+  workflow_dispatch: # manual / dashboard-triggered runs
+    inputs:
+      lookback_days:
+        description: 'How many days back to search each mailbox'
+        required: false
+        default: '730'
 
 jobs:
   collect:
@@ -13,9 +18,9 @@ jobs:
       APP_URL: ${{ secrets.APP_URL }}
       INGEST_TOKEN: ${{ secrets.INGEST_TOKEN }}
       CONCURRENCY: '5'
-      # How far back to search each mailbox, in days. Overrides each mailbox's
-      # own setting. 730 = pull the last 2 years. Lower it once backfilled.
-      LOOKBACK_DAYS: '730'
+      # How far back to search each mailbox, in days. Uses the value chosen when
+      # triggered (dashboard/manual), else 730 (2 years) for scheduled runs.
+      LOOKBACK_DAYS: ${{ github.event.inputs.lookback_days || '730' }}
       # Optional: paste a full mailboxes JSON array as a secret to use the
       # file-based list instead of the mailboxes stored in the app.
       MAILBOXES_JSON: ${{ secrets.MAILBOXES_JSON }}

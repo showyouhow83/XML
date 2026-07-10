@@ -1,19 +1,20 @@
 ---
 import { env } from 'cloudflare:workers';
 import Base from '../layouts/Base.astro';
-import { ensureSchema, listMailboxes, type MailboxRow } from '../lib/db';
+import { ensureSchema, listMailboxes, mailboxInvoiceCounts, type MailboxRow } from '../lib/db';
 
 const p = Astro.url.searchParams;
 
 let dbError: string | null = null;
 let mailboxes: MailboxRow[] = [];
+let counts: Record<string, number> = {};
 
 if (!env.DB) {
   dbError = 'D1 database binding "DB" not found. Create it with `npx wrangler d1 create financing-invoices` and update wrangler.jsonc.';
 } else {
   try {
     await ensureSchema(env.DB);
-    mailboxes = await listMailboxes(env.DB);
+    [mailboxes, counts] = await Promise.all([listMailboxes(env.DB), mailboxInvoiceCounts(env.DB)]);
   } catch (err) {
     dbError = (err as Error).message;
   }
@@ -22,6 +23,15 @@ if (!env.DB) {
 const notice = p.get('added') ? 'Mailbox saved.' : p.get('deleted') ? 'Mailbox removed.' : null;
 const error = p.get('error');
 const fmtDateTime = (iso: string | null) => (iso ? iso.replace('T', ' ').slice(0, 16) : 'never');
+
+function statusInfo(s: string | null) {
+  const v = (s || '').toLowerCase();
+  if (v.startsWith('collecting')) return { cls: 'warn', text: '⟳ collecting…', title: s || '' };
+  if (s === 'ok') return { cls: 'ok', text: '✓ up to date', title: '' };
+  if (s) return { cls: 'err', text: 'error', title: s };
+  return { cls: 'muted', text: 'pending', title: '' };
+}
+const anyCollecting = mailboxes.some((m) => (m.last_status || '').toLowerCase().startsWith('collecting'));
 ---
 
 <Base title="Mailboxes · Financing Inbox" active="mailboxes">
@@ -64,28 +74,27 @@ const fmtDateTime = (iso: string | null) => (iso ? iso.replace('T', ' ').slice(0
       <div class="table-wrap">
         <table>
           <thead>
-            <tr><th>Client</th><th>Email</th><th>Host</th><th>Last sync</th><th>Status</th><th></th></tr>
+            <tr><th>Client</th><th>Email</th><th class="right">Invoices</th><th>Last sync</th><th>Status</th><th></th></tr>
           </thead>
           <tbody>
-            {mailboxes.map((m) => (
-              <tr>
-                <td>{m.label || '—'}</td>
-                <td>{m.email}</td>
-                <td class="muted">{m.host}:{m.port}</td>
-                <td class="muted">{fmtDateTime(m.last_synced_at)}</td>
-                <td>
-                  {m.last_status === 'ok' ? <span class="pill ok">ok</span>
-                    : m.last_status ? <span class="pill err" title={m.last_status}>error</span>
-                    : <span class="pill muted">pending</span>}
-                </td>
-                <td class="right">
-                  <form class="inline" method="post" action="/api/mailboxes/delete" onsubmit="return confirm('Remove this mailbox?')">
-                    <input type="hidden" name="id" value={m.id} />
-                    <button class="btn danger sm" type="submit">Delete</button>
-                  </form>
-                </td>
-              </tr>
-            ))}
+            {mailboxes.map((m) => {
+              const si = statusInfo(m.last_status);
+              return (
+                <tr>
+                  <td>{m.label || '—'}</td>
+                  <td>{m.email}</td>
+                  <td class="num">{(counts[m.email] ?? 0).toLocaleString()}</td>
+                  <td class="muted">{fmtDateTime(m.last_synced_at)}</td>
+                  <td><span class={`pill ${si.cls}`} title={si.title}>{si.text}</span></td>
+                  <td class="right">
+                    <form class="inline" method="post" action="/api/mailboxes/delete" onsubmit="return confirm('Remove this mailbox?')">
+                      <input type="hidden" name="id" value={m.id} />
+                      <button class="btn danger sm" type="submit">Delete</button>
+                    </form>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -97,10 +106,13 @@ const fmtDateTime = (iso: string | null) => (iso ? iso.replace('T', ' ').slice(0
   <section class="panel" style="margin-top:20px;">
     <h2>How collection runs</h2>
     <p class="muted" style="margin-top:0;">
-      A Node “collector” connects to each mailbox over IMAP, downloads the invoice XML plus its matching PDF, extracts the
-      amounts, and stores everything here. It runs on a schedule via GitHub Actions, or on demand with <code>npm run collect</code>.
-      Accounts are processed a few at a time (default 5) to avoid provider rate limits. You can manage mailboxes here, or hand the
-      collector a git-ignored <code>collector/mailboxes.json</code> instead.
+      A “collector” connects to each mailbox over IMAP, downloads the invoice XML + matching PDF, extracts the data, and stores
+      it here. Trigger it with <strong>Collect now</strong> on the dashboard (pick how far back), or it runs nightly. It runs on
+      GitHub's servers, so <strong>you can close this page</strong> — it won't stop. Status shows <span class="pill warn">⟳ collecting…</span>
+      while a run is in progress and <span class="pill ok">✓ up to date</span> when a mailbox is fully pulled. Re-running only
+      adds new invoices (existing ones are de-duplicated), so it's safe to run anytime.
     </p>
   </section>
+
+  {anyCollecting && <script is:inline>{`setTimeout(function(){ location.reload(); }, 8000);`}</script>}
 </Base>

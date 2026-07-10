@@ -101,6 +101,20 @@ async function postIngest(mailbox: Mailbox, records: OutRecord[], status: string
   }
 }
 
+// Report a live status for a mailbox (e.g. "collecting…") without marking it synced.
+async function postStatus(mailbox: Mailbox, status: string) {
+  if (!APP_URL || !INGEST_TOKEN || typeof mailbox.id !== 'number') return;
+  try {
+    await fetch(`${APP_URL}/api/collector/status`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${INGEST_TOKEN}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ mailboxId: mailbox.id, status }),
+    });
+  } catch {
+    // status is best-effort
+  }
+}
+
 async function collectMailbox(mailbox: Mailbox): Promise<{ found: number; error?: string }> {
   const name = mailbox.label || mailbox.email;
   const lookback = LOOKBACK_OVERRIDE ?? mailbox.lookbackDays ?? 30;
@@ -113,6 +127,7 @@ async function collectMailbox(mailbox: Mailbox): Promise<{ found: number; error?
   });
 
   const records: OutRecord[] = [];
+  if (!DRY_RUN) await postStatus(mailbox, 'collecting…');
   try {
     await client.connect();
     const lock = await client.getMailboxLock('INBOX');
