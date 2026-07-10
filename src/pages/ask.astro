@@ -17,18 +17,17 @@ if (env.DB) {
 }
 
 const examples = [
-  'Total IVA paid, by currency, this year',
+  'Total spend by issuer cédula, this year',
   'Top 5 vendors by total spend',
   'How much did I spend with Liberty in 2025?',
   'Count of invoices per month in 2025',
-  'Invoices over ₡500,000, newest first',
-  'Total spend grouped by issuer cédula',
+  'Total IVA paid, by currency',
 ];
 ---
 
 <Base title="Ask AI · Financing Inbox" active="ask">
   <h1>Ask your invoices</h1>
-  <p class="sub">Ask a question in plain language. Claude (Opus) writes a read-only query against your {stats.invoices.toLocaleString()} stored invoice(s), double-checks it, runs it, and explains the answer — showing the exact query and rows so you can verify every number.</p>
+  <p class="sub">Ask in plain language. Claude (Opus) writes a read-only query over your {stats.invoices.toLocaleString()} invoice(s), double-checks it, runs it, and explains the answer — showing the query and rows so you can verify. Ask follow-ups; it remembers the conversation.</p>
 
   {!configured && (
     <div class="banner err">
@@ -51,7 +50,10 @@ const examples = [
             <button type="button" class="btn secondary sm chip" data-q={ex}>{ex}</button>
           ))}
         </div>
-        <button class="btn" id="ask-btn" type="submit" disabled={!configured}>Ask</button>
+        <div style="display:flex; gap:6px; align-items:center;">
+          <button type="button" id="clear-btn" class="btn secondary sm" style="display:none;">New conversation</button>
+          <button class="btn" id="ask-btn" type="submit" disabled={!configured}>Ask</button>
+        </div>
       </div>
     </form>
   </section>
@@ -59,36 +61,20 @@ const examples = [
   <div id="status" class="muted" style="display:none; margin-bottom:16px;"></div>
   <div id="error" class="banner err" style="display:none;"></div>
 
-  <section id="answer-panel" class="panel" style="display:none;">
-    <h2>Answer</h2>
-    <div id="answer" style="white-space:pre-wrap; font-size:15px; line-height:1.6;"></div>
-    <details id="sql-details" open style="margin-top:14px; display:none;">
-      <summary class="muted" style="cursor:pointer; font-size:13px;">Query used (click to verify)</summary>
-      <pre id="sql" style="overflow-x:auto; background:#f3f4f6; padding:10px 12px; border-radius:8px; margin:8px 0 0; font-size:12px; white-space:pre;"></pre>
-    </details>
-  </section>
-
-  <section id="rows-panel" style="display:none;">
-    <h2 id="rows-title" style="margin-bottom:8px;">Rows</h2>
-    <div class="table-wrap">
-      <table id="rows-table"><thead></thead><tbody></tbody></table>
-    </div>
-  </section>
+  <div id="thread"></div>
 
   <script is:inline>
     (function () {
       const form = document.getElementById('ask-form');
       const input = document.getElementById('question');
       const btn = document.getElementById('ask-btn');
+      const clearBtn = document.getElementById('clear-btn');
       const statusEl = document.getElementById('status');
       const errorEl = document.getElementById('error');
-      const answerPanel = document.getElementById('answer-panel');
-      const answerEl = document.getElementById('answer');
-      const sqlDetails = document.getElementById('sql-details');
-      const sqlEl = document.getElementById('sql');
-      const rowsPanel = document.getElementById('rows-panel');
-      const rowsTitle = document.getElementById('rows-title');
-      const table = document.getElementById('rows-table');
+      const thread = document.getElementById('thread');
+
+      // Conversation memory sent back so follow-ups have context.
+      let history = [];
 
       document.getElementById('chips').addEventListener('click', function (e) {
         const b = e.target.closest('.chip');
@@ -97,43 +83,132 @@ const examples = [
         input.focus();
       });
 
-      function fmtCell(v) {
-        if (v === null || v === undefined) return '—';
-        if (typeof v === 'number') {
-          return Number.isInteger(v) ? v.toLocaleString() : v.toLocaleString(undefined, { maximumFractionDigits: 2 });
+      clearBtn.addEventListener('click', function () {
+        history = [];
+        thread.innerHTML = '';
+        clearBtn.style.display = 'none';
+        errorEl.style.display = 'none';
+        input.focus();
+      });
+
+      // ---- tiny, safe Markdown renderer (tables, bold, code, headings, lists) ----
+      function inlineInto(el, text) {
+        const re = /(\*\*([^*]+)\*\*|`([^`]+)`)/g;
+        let last = 0, m;
+        while ((m = re.exec(text))) {
+          if (m.index > last) el.appendChild(document.createTextNode(text.slice(last, m.index)));
+          if (m[2] !== undefined) { const b = document.createElement('strong'); b.textContent = m[2]; el.appendChild(b); }
+          else { const c = document.createElement('code'); c.textContent = m[3]; el.appendChild(c); }
+          last = m.index + m[0].length;
         }
-        return String(v);
+        if (last < text.length) el.appendChild(document.createTextNode(text.slice(last)));
+      }
+      function splitRow(line) {
+        let s = line.trim();
+        if (s.startsWith('|')) s = s.slice(1);
+        if (s.endsWith('|')) s = s.slice(0, -1);
+        return s.split('|').map(function (c) { return c.trim(); });
+      }
+      function isSep(line) { return line && /^[\s|:\-]+$/.test(line) && line.indexOf('-') !== -1; }
+      function renderMarkdown(md, container) {
+        const lines = String(md == null ? '' : md).replace(/\r/g, '').split('\n');
+        let i = 0;
+        while (i < lines.length) {
+          const line = lines[i];
+          if (!line.trim()) { i++; continue; }
+          // table
+          if (line.indexOf('|') !== -1 && i + 1 < lines.length && isSep(lines[i + 1])) {
+            const header = splitRow(line);
+            i += 2;
+            const body = [];
+            while (i < lines.length && lines[i].indexOf('|') !== -1 && lines[i].trim()) { body.push(splitRow(lines[i])); i++; }
+            const wrap = document.createElement('div'); wrap.className = 'table-wrap'; wrap.style.margin = '8px 0';
+            const table = document.createElement('table');
+            const thead = document.createElement('thead'); const htr = document.createElement('tr');
+            header.forEach(function (h) { const th = document.createElement('th'); inlineInto(th, h); htr.appendChild(th); });
+            thead.appendChild(htr); table.appendChild(thead);
+            const tbody = document.createElement('tbody');
+            body.forEach(function (r) {
+              const tr = document.createElement('tr');
+              header.forEach(function (_h, idx) { const td = document.createElement('td'); inlineInto(td, r[idx] == null ? '' : r[idx]); tr.appendChild(td); });
+              tbody.appendChild(tr);
+            });
+            table.appendChild(tbody); wrap.appendChild(table); container.appendChild(wrap);
+            continue;
+          }
+          // heading
+          const h = line.match(/^(#{1,4})\s+(.*)$/);
+          if (h) { const el = document.createElement(h[1].length <= 2 ? 'h3' : 'h4'); inlineInto(el, h[2]); container.appendChild(el); i++; continue; }
+          // unordered list
+          if (/^\s*[-*]\s+/.test(line)) {
+            const ul = document.createElement('ul'); ul.style.margin = '6px 0 6px 18px';
+            while (i < lines.length && /^\s*[-*]\s+/.test(lines[i])) { const li = document.createElement('li'); inlineInto(li, lines[i].replace(/^\s*[-*]\s+/, '')); ul.appendChild(li); i++; }
+            container.appendChild(ul); continue;
+          }
+          // paragraph (consecutive plain lines)
+          const p = document.createElement('p'); p.style.margin = '6px 0';
+          let first = true;
+          while (i < lines.length && lines[i].trim() && !/^(#{1,4})\s+/.test(lines[i]) && !/^\s*[-*]\s+/.test(lines[i]) &&
+                 !(lines[i].indexOf('|') !== -1 && i + 1 < lines.length && isSep(lines[i + 1]))) {
+            if (!first) p.appendChild(document.createElement('br'));
+            inlineInto(p, lines[i]); first = false; i++;
+          }
+          container.appendChild(p);
+        }
       }
 
-      function renderRows(rows, rowCount, truncated) {
-        const thead = table.querySelector('thead');
-        const tbody = table.querySelector('tbody');
-        thead.innerHTML = '';
-        tbody.innerHTML = '';
-        if (!rows || !rows.length) { rowsPanel.style.display = 'none'; return; }
+      function fmtCell(v) {
+        if (v === null || v === undefined) return '—';
+        if (typeof v === 'number') return Number.isInteger(v) ? v.toLocaleString() : v.toLocaleString(undefined, { maximumFractionDigits: 2 });
+        return String(v);
+      }
+      function rowsTable(rows) {
+        const wrap = document.createElement('div'); wrap.className = 'table-wrap';
+        const table = document.createElement('table');
+        const thead = document.createElement('thead'); const htr = document.createElement('tr');
         const cols = Object.keys(rows[0]);
-        const htr = document.createElement('tr');
-        cols.forEach(function (c) {
-          const th = document.createElement('th');
-          th.textContent = c;
-          htr.appendChild(th);
-        });
-        thead.appendChild(htr);
+        cols.forEach(function (c) { const th = document.createElement('th'); th.textContent = c; htr.appendChild(th); });
+        thead.appendChild(htr); table.appendChild(thead);
+        const tbody = document.createElement('tbody');
         rows.forEach(function (row) {
           const tr = document.createElement('tr');
-          cols.forEach(function (c) {
-            const td = document.createElement('td');
-            const v = row[c];
-            td.textContent = fmtCell(v);
-            if (typeof v === 'number') td.className = 'num';
-            tr.appendChild(td);
-          });
+          cols.forEach(function (c) { const td = document.createElement('td'); const v = row[c]; td.textContent = fmtCell(v); if (typeof v === 'number') td.className = 'num'; tr.appendChild(td); });
           tbody.appendChild(tr);
         });
-        rowsTitle.textContent = truncated
-          ? 'Rows (showing ' + rows.length + ' of ' + rowCount.toLocaleString() + ')'
-          : 'Rows (' + rowCount.toLocaleString() + ')';
-        rowsPanel.style.display = '';
+        table.appendChild(tbody); wrap.appendChild(table);
+        return wrap;
+      }
+      function details(summaryText) {
+        const d = document.createElement('details'); d.style.marginTop = '10px';
+        const s = document.createElement('summary'); s.className = 'muted'; s.style.cssText = 'cursor:pointer; font-size:13px;'; s.textContent = summaryText;
+        d.appendChild(s); return d;
+      }
+
+      function addTurn(question, data) {
+        const panel = document.createElement('section'); panel.className = 'panel'; panel.style.marginBottom = '16px';
+        const q = document.createElement('div');
+        q.style.cssText = 'font-weight:600; margin-bottom:8px;';
+        q.textContent = 'You: ' + question;
+        panel.appendChild(q);
+        const ans = document.createElement('div');
+        renderMarkdown(data.answer || '(no answer)', ans);
+        panel.appendChild(ans);
+        if (data.sql) {
+          const d = details('Query used (click to verify)');
+          const pre = document.createElement('pre');
+          pre.style.cssText = 'overflow-x:auto; background:#f3f4f6; padding:10px 12px; border-radius:8px; margin:8px 0 0; font-size:12px; white-space:pre;';
+          pre.textContent = data.sql;
+          d.appendChild(pre); panel.appendChild(d);
+        }
+        if (data.rows && data.rows.length) {
+          const label = data.truncated ? ('Data (showing ' + data.rows.length + ' of ' + data.rowCount.toLocaleString() + ')') : ('Data (' + data.rowCount.toLocaleString() + ' rows)');
+          const d = details(label);
+          const box = document.createElement('div'); box.style.marginTop = '8px';
+          box.appendChild(rowsTable(data.rows));
+          d.appendChild(box); panel.appendChild(d);
+        }
+        thread.insertBefore(panel, thread.firstChild); // newest on top
+        clearBtn.style.display = '';
       }
 
       form.addEventListener('submit', async function (e) {
@@ -142,9 +217,6 @@ const examples = [
         if (!question) return;
 
         errorEl.style.display = 'none';
-        answerPanel.style.display = 'none';
-        rowsPanel.style.display = 'none';
-        sqlDetails.style.display = 'none';
         btn.disabled = true;
         const original = btn.textContent;
         btn.textContent = 'Thinking…';
@@ -155,23 +227,20 @@ const examples = [
           const res = await fetch('/api/ask', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ question: question }),
+            body: JSON.stringify({ question: question, history: history.slice(-6) }),
           });
           const data = await res.json();
           statusEl.style.display = 'none';
 
-          if (data.sql) {
-            sqlEl.textContent = data.sql;
-            sqlDetails.style.display = '';
-          }
-
           if (!res.ok || data.error) {
             errorEl.textContent = data.error || ('Request failed (' + res.status + ')');
             errorEl.style.display = '';
+            if (data.sql) { errorEl.textContent += '  ·  attempted SQL: ' + data.sql; }
           } else {
-            answerEl.textContent = data.answer || '(no answer)';
-            answerPanel.style.display = '';
-            renderRows(data.rows, data.rowCount, data.truncated);
+            addTurn(question, data);
+            history.push({ question: question, sql: data.sql || null, answer: data.answer || '' });
+            if (history.length > 12) history = history.slice(-12);
+            input.value = '';
           }
         } catch (err) {
           statusEl.style.display = 'none';
@@ -180,6 +249,7 @@ const examples = [
         } finally {
           btn.disabled = false;
           btn.textContent = original;
+          input.focus();
         }
       });
     })();

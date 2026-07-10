@@ -1,11 +1,11 @@
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { ensureSchema } from '../../lib/db';
-import { askInvoices } from '../../lib/ai';
+import { askInvoices, type AskTurn } from '../../lib/ai';
 
 export const prerender = false;
 
-// POST { question } -> { answer, sql, rows, rowCount, truncated, error? }
+// POST { question, history? } -> { answer, sql, rows, rowCount, truncated, error? }
 export const POST: APIRoute = async ({ request }) => {
   if (!env.ANTHROPIC_API_KEY) {
     return Response.json(
@@ -25,9 +25,21 @@ export const POST: APIRoute = async ({ request }) => {
   if (!question) return Response.json({ error: 'Please enter a question.' }, { status: 400 });
   if (question.length > 2000) return Response.json({ error: 'Question is too long.' }, { status: 400 });
 
+  // Prior turns (from the client) so follow-up questions keep context.
+  const history: AskTurn[] = Array.isArray(body?.history)
+    ? body.history
+        .filter((h: any) => h && typeof h.question === 'string')
+        .slice(-6)
+        .map((h: any) => ({
+          question: String(h.question),
+          sql: typeof h.sql === 'string' ? h.sql : null,
+          answer: typeof h.answer === 'string' ? h.answer : undefined,
+        }))
+    : [];
+
   try {
     await ensureSchema(env.DB);
-    const result = await askInvoices(env.DB, env.ANTHROPIC_API_KEY, question);
+    const result = await askInvoices(env.DB, env.ANTHROPIC_API_KEY, question, history);
     return Response.json(result);
   } catch (err) {
     return Response.json({ error: `Ask failed: ${(err as Error).message}` }, { status: 500 });
