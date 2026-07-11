@@ -179,6 +179,13 @@ Later:
 
 ## Changelog (newest first)
 
+- **#24** **Collection gets its own page under Settings** — the collection
+  **schedule** editor moved off the Settings page onto a dedicated **`/collection`**
+  page (breadcrumb `Settings › Collection`), so the **Collection** card now opens
+  its own page exactly like the **Client mailboxes** card — consistent Settings
+  IA instead of a form dumped inline. The card still summarizes the active cadence;
+  `/api/schedule` now redirects to `/collection?saved=schedule`. Verified against a
+  running dev server (9/9).
 - **#23** **“Organize PDFs” button hides once the work is done** — it used to show
   whenever any PDFs existed (keyed to the total count), so it reappeared on every
   reload even after everything was already grouped by mailbox. It's now gated on

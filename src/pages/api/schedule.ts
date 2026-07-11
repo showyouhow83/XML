@@ -23,5 +23,5 @@ export const POST: APIRoute = async ({ request, redirect }) => {
     }
   }
   await setCollectionSchedule(env.DB, raw);
-  return redirect('/settings?saved=schedule');
+  return redirect('/collection?saved=schedule');
 };
