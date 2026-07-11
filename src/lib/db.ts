@@ -31,6 +31,9 @@ const SCHEMA: string[] = [
   `CREATE TABLE IF NOT EXISTS attachments (
     clave TEXT PRIMARY KEY, xml_content TEXT, pdf_content TEXT, created_at TEXT NOT NULL
   )`,
+  `CREATE TABLE IF NOT EXISTS app_state (
+    key TEXT PRIMARY KEY, value TEXT, updated_at TEXT NOT NULL
+  )`,
   `CREATE INDEX IF NOT EXISTS idx_invoices_fecha ON invoices(fecha_emision)`,
   `CREATE INDEX IF NOT EXISTS idx_invoices_emisor ON invoices(emisor_id)`,
   `CREATE INDEX IF NOT EXISTS idx_invoices_account ON invoices(source_account)`,
@@ -232,6 +235,63 @@ export async function recordSync(
     )
     .bind(opts.status.slice(0, 300), opts.syncedAt, from, from, from, lastUid, uidvalidity, id)
     .run();
+}
+
+// ---------------------------------------------------------------------------
+// App state — a shared key/value flag store (used for the global collection lock)
+// ---------------------------------------------------------------------------
+
+// A collection run holds this lock so only ONE runs at a time across all clients.
+// If a run dies without releasing, the lock is treated as free after this long.
+const COLLECTION_KEY = 'collection_run';
+export const COLLECTION_LOCK_TTL_MS = 60 * 60 * 1000; // 60 minutes
+
+export interface CollectionLock {
+  active: boolean;
+  startedAt: string | null;
+  startedBy: string | null;
+}
+
+export async function getCollectionLock(db: D1Database): Promise<CollectionLock> {
+  const row = await db
+    .prepare(`SELECT value, updated_at FROM app_state WHERE key = ?`)
+    .bind(COLLECTION_KEY)
+    .first<{ value: string | null; updated_at: string }>();
+  if (!row?.updated_at) return { active: false, startedAt: null, startedBy: null };
+  const age = Date.now() - Date.parse(row.updated_at);
+  const active = Number.isFinite(age) && age >= 0 && age < COLLECTION_LOCK_TTL_MS;
+  return { active, startedAt: row.updated_at, startedBy: row.value ?? null };
+}
+
+/** Take the lock only if it is free (or its holder went stale). Returns true if acquired. */
+export async function acquireCollectionLock(db: D1Database, startedBy: string): Promise<boolean> {
+  const now = new Date().toISOString();
+  const cutoff = new Date(Date.now() - COLLECTION_LOCK_TTL_MS).toISOString();
+  const res = await db
+    .prepare(
+      `INSERT INTO app_state (key, value, updated_at) VALUES (?, ?, ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+         WHERE app_state.updated_at < ?`
+    )
+    .bind(COLLECTION_KEY, startedBy.slice(0, 120), now, cutoff)
+    .run();
+  return (res.meta?.changes ?? 0) > 0;
+}
+
+/** Refresh the lock's timestamp so a long, healthy run doesn't look stale. */
+export async function touchCollectionLock(db: D1Database, startedBy: string): Promise<void> {
+  const now = new Date().toISOString();
+  await db
+    .prepare(
+      `INSERT INTO app_state (key, value, updated_at) VALUES (?, ?, ?)
+       ON CONFLICT(key) DO UPDATE SET updated_at = excluded.updated_at`
+    )
+    .bind(COLLECTION_KEY, startedBy.slice(0, 120), now)
+    .run();
+}
+
+export async function releaseCollectionLock(db: D1Database): Promise<void> {
+  await db.prepare(`DELETE FROM app_state WHERE key = ?`).bind(COLLECTION_KEY).run();
 }
 
 // ---------------------------------------------------------------------------

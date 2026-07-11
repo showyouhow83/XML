@@ -117,6 +117,22 @@ async function postIngest(
   }
 }
 
+// Report run lifecycle so the shared collection lock reflects a real run:
+// 'start'/'heartbeat' keep the dashboard's Collect button disabled while we work,
+// 'finish' releases it. Best-effort — the lock also has a stale timeout.
+async function postRun(event: 'start' | 'heartbeat' | 'finish') {
+  if (!APP_URL || !INGEST_TOKEN) return;
+  try {
+    await fetch(`${APP_URL}/api/collector/run`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${INGEST_TOKEN}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ event }),
+    });
+  } catch {
+    // best-effort
+  }
+}
+
 // Report a live status for a mailbox (e.g. "collecting…") without marking it synced.
 async function postStatus(mailbox: Mailbox, status: string) {
   if (!APP_URL || !INGEST_TOKEN || typeof mailbox.id !== 'number') return;
@@ -144,7 +160,10 @@ async function collectMailbox(mailbox: Mailbox): Promise<{ found: number; error?
   });
 
   const records: OutRecord[] = [];
-  if (!DRY_RUN) await postStatus(mailbox, 'collecting…');
+  if (!DRY_RUN) {
+    await postStatus(mailbox, 'collecting…');
+    await postRun('heartbeat'); // keep the global lock fresh during long runs
+  }
   try {
     await client.connect();
     const lock = await client.getMailboxLock('INBOX');
@@ -255,13 +274,19 @@ async function main() {
     `${DRY_RUN ? '[DRY RUN] ' : ''}Collecting from ${mailboxes.length} mailbox(es), ${CONCURRENCY} at a time` +
       `${FORCE_FULL ? ' — FULL RE-SCAN (ignoring saved position)' : ' (only new mail after the first run)'}…\n`
   );
-  const results = await pool(mailboxes, CONCURRENCY, collectMailbox);
+  // Hold the shared lock for the whole run so only one collection runs at a time.
+  if (!DRY_RUN) await postRun('start');
+  try {
+    const results = await pool(mailboxes, CONCURRENCY, collectMailbox);
 
-  const totalInvoices = results.reduce((s, r) => s + r.found, 0);
-  const errors = results.filter((r) => r.error).length;
-  const verb = DRY_RUN ? 'found (not stored)' : 'collected';
-  console.log(`\nDone. ${totalInvoices} invoice(s) ${verb}, ${errors} mailbox error(s).`);
-  if (errors) process.exitCode = 1;
+    const totalInvoices = results.reduce((s, r) => s + r.found, 0);
+    const errors = results.filter((r) => r.error).length;
+    const verb = DRY_RUN ? 'found (not stored)' : 'collected';
+    console.log(`\nDone. ${totalInvoices} invoice(s) ${verb}, ${errors} mailbox error(s).`);
+    if (errors) process.exitCode = 1;
+  } finally {
+    if (!DRY_RUN) await postRun('finish'); // release the lock even if the run errored
+  }
 }
 
 main().catch((err) => fail(err.message));
