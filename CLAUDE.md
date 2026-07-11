@@ -179,6 +179,14 @@ Later:
 
 ## Changelog (newest first)
 
+- **#23** **“Organize PDFs” button hides once the work is done** — it used to show
+  whenever any PDFs existed (keyed to the total count), so it reappeared on every
+  reload even after everything was already grouped by mailbox. It's now gated on
+  **work actually remaining**: base64 still in D1 (`pdfsInD1Count`) **or** objects
+  still at the old flat R2 keys (new `hasLegacyPdfObjects`, an R2 `list` on the
+  `pdf/` prefix). Once everything is foldered both are zero and the button/message
+  flips to “stored in R2, grouped by mailbox ✓”; new invoices arrive foldered via
+  ingest, so they never re-trigger it. Verified with a mock-R2 harness (8/8).
 - **#22** **Instant button/action feedback + Collection card links to its schedule**
   — every button now shows its press was captured and, when it starts async work
   (a form POST/redirect, a fetch, a file download), a **spinner + disabled busy

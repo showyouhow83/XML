@@ -52,6 +52,15 @@ export async function getPdf(bucket: R2Bucket, account: string | null | undefine
   return obj ? obj.arrayBuffer() : null;
 }
 
+/** Any PDFs still at the old flat `pdf/<clave>.pdf` keys (not yet foldered)?
+ *  Used to decide whether the "organize" button still has work to do. */
+export async function hasLegacyPdfObjects(bucket: R2Bucket): Promise<boolean> {
+  // Legacy objects all share the `pdf/` prefix (see legacyPdfKey); mailbox folders
+  // never do. One object under it means the organize pass still has work.
+  const r = await bucket.list({ prefix: 'pdf/', limit: 1 });
+  return r.objects.length > 0;
+}
+
 /** Move a PDF from the legacy flat key into its mailbox folder.
  *  Returns 'moved' | 'already' (foldered key exists) | 'missing' (nothing to move). */
 export async function foldPdf(bucket: R2Bucket, account: string | null | undefined, clave: string): Promise<'moved' | 'already' | 'missing'> {

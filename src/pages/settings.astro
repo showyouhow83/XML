@@ -2,29 +2,38 @@
 import { env } from 'cloudflare:workers';
 import Base from '../layouts/Base.astro';
 import { ensureSchema, listMailboxes, pdfsInD1Count, pdfInvoiceCount, getCollectionSchedule } from '../lib/db';
+import { hasLegacyPdfObjects } from '../lib/pdfs';
 import { describeSchedule, DEFAULT_SCHEDULE, type CollectionSchedule } from '../lib/schedule';
+
+const aiOn = Boolean(env.ANTHROPIC_API_KEY);
+const collectOn = Boolean(env.GH_DISPATCH_TOKEN);
+const r2On = Boolean(env.PDFS);
 
 let mailboxCount = 0;
 let pdfsInD1 = 0;
 let pdfCount = 0;
+let legacyPdfs = false;
 let schedule: CollectionSchedule = DEFAULT_SCHEDULE;
 let dbError: string | null = null;
 if (env.DB) {
   try {
     await ensureSchema(env.DB);
-    [mailboxCount, pdfsInD1, pdfCount, schedule] = await Promise.all([
+    [mailboxCount, pdfsInD1, pdfCount, schedule, legacyPdfs] = await Promise.all([
       listMailboxes(env.DB).then((m) => m.length),
       pdfsInD1Count(env.DB),
       pdfInvoiceCount(env.DB),
       getCollectionSchedule(env.DB),
+      env.PDFS ? hasLegacyPdfObjects(env.PDFS) : Promise.resolve(false),
     ]);
   } catch (err) {
     dbError = (err as Error).message;
   }
 }
-const aiOn = Boolean(env.ANTHROPIC_API_KEY);
-const collectOn = Boolean(env.GH_DISPATCH_TOKEN);
-const r2On = Boolean(env.PDFS);
+// The organize button should appear only when there's actual work left: PDFs
+// still as base64 in D1, or objects still at the old flat R2 keys. Once
+// everything is foldered, both are zero and the button goes away (new invoices
+// are already stored foldered by ingest, so they never re-trigger it).
+const needsOrganize = r2On && (pdfsInD1 > 0 || legacyPdfs);
 const saved = Astro.url.searchParams.get('saved');
 
 const WEEKDAYS = [
@@ -70,13 +79,15 @@ const WEEKDAYS = [
       <span>
         <strong>PDF storage</strong>
         <span class="muted" id="pdf-status">
-          {r2On
-            ? pdfsInD1 > 0
-              ? `${pdfsInD1.toLocaleString()} PDF(s) still in the database — move them to R2, grouped by mailbox.`
-              : 'PDFs are stored in R2, grouped by mailbox. ✓'
-            : 'PDFs are stored in the database. Create an R2 bucket named “xml-pdfs” and bind it as PDFS to move them.'}
+          {!r2On
+            ? 'PDFs are stored in the database. Create an R2 bucket named “xml-pdfs” and bind it as PDFS to move them.'
+            : needsOrganize
+              ? pdfsInD1 > 0
+                ? `${pdfsInD1.toLocaleString()} PDF(s) still in the database — move them to R2, grouped by mailbox.`
+                : 'Some PDFs aren’t grouped into mailbox folders yet — organize them.'
+              : 'PDFs are stored in R2, grouped by mailbox. ✓'}
         </span>
-        {r2On && pdfCount > 0 && (
+        {needsOrganize && (
           <span style="display:block; margin-top:8px;">
             <button id="migrate-pdfs" class="btn secondary sm" type="button" data-total={pdfCount}>Move / organize PDFs by mailbox</button>
           </span>
