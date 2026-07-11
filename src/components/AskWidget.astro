@@ -36,7 +36,7 @@ const configured = Boolean(env.ANTHROPIC_API_KEY);
     <div class="ask-note muted">Falta configurar <code>ANTHROPIC_API_KEY</code> en el Worker para activar a Ivan.</div>
   )}
 
-  <form id="ask-form" class="ask-input">
+  <form id="ask-form" class="ask-input" data-no-busy>
     <textarea id="ask-q" rows="1" placeholder="Pregúntale a Ivan…" autocomplete="off"></textarea>
     <button class="btn" id="ask-send" type="submit" aria-label="Send" disabled={!configured}>➤</button>
   </form>

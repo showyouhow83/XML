@@ -109,6 +109,27 @@ input:focus, select:focus { outline: 2px solid #c7d2fe; border-color: var(--bran
 .btn.danger:hover { background: var(--err-bg); }
 .btn.sm { padding: 4px 9px; font-size: 12px; font-weight: 500; }
 
+/* Instant feedback so a click never feels ignored: a visible press, a focus
+   ring, and a busy/loading state (spinner + disabled) applied by Base.astro
+   whenever a button kicks off async work or a form submit. */
+.btn { transition: filter .12s ease, transform .06s ease, opacity .12s ease, box-shadow .12s ease; }
+.btn:active { transform: translateY(1px) scale(.985); filter: brightness(.96); }
+.btn:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.btn.is-busy, .btn:disabled, .btn[disabled], .btn[aria-disabled="true"] { opacity: .65; cursor: progress; }
+.btn:disabled:active, .btn.is-busy:active { transform: none; }
+.btn.is-busy { position: relative; pointer-events: none; }
+.btn.is-busy::before {
+  content: ""; display: inline-block; width: 1em; height: 1em;
+  margin-right: .5em; vertical-align: -0.15em;
+  border: 2px solid currentColor; border-right-color: transparent;
+  border-radius: 50%; animation: btnspin .6s linear infinite;
+}
+@keyframes btnspin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .btn:active { transform: none; }
+  .btn.is-busy::before { animation-duration: 1.4s; }
+}
+
 .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); }
 table { width: 100%; border-collapse: collapse; white-space: nowrap; }
 th, td { padding: 9px 12px; text-align: left; border-bottom: 1px solid var(--line); }
