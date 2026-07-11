@@ -12,6 +12,7 @@ const configured = Boolean(env.ANTHROPIC_API_KEY);
   <header class="ask-head">
     <strong>Ivan · tus facturas</strong>
     <span class="ask-head-btns">
+      <button id="ask-wide" class="btn secondary sm ask-wide-btn" type="button" title="Ensanchar / reducir la ventana" aria-label="Ensanchar">⤢</button>
       <button id="ask-clear" class="btn secondary sm" type="button" title="Empezar una conversación nueva">Nueva</button>
       <button id="ask-close" class="btn secondary sm" type="button" aria-label="Cerrar">✕</button>
     </span>
@@ -29,7 +30,6 @@ const configured = Boolean(env.ANTHROPIC_API_KEY);
     </div>
   </div>
 
-  <div id="ask-status" class="ask-status muted" hidden></div>
   <div id="ask-error" class="banner err" hidden></div>
 
   {!configured && (
@@ -61,6 +61,7 @@ const configured = Boolean(env.ANTHROPIC_API_KEY);
     box-shadow: 0 14px 48px rgba(0,0,0,.28); overflow: hidden;
   }
   .ask-panel[hidden] { display: none; }
+  .ask-panel.ask-wide { width: 720px; height: 78vh; max-height: 760px; }
   .ask-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border-bottom: 1px solid var(--line); }
   .ask-head-btns { display: flex; gap: 6px; }
   .ask-thread { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 12px; }
@@ -76,6 +77,8 @@ const configured = Boolean(env.ANTHROPIC_API_KEY);
   #ask-panel .ask-sql { overflow-x: auto; background: #f3f4f6; color: var(--ink); padding: 8px 10px; border-radius: 8px; margin: 6px 0 0; font-size: 11px; white-space: pre; }
 
   .ask-status { padding: 0 12px 8px; font-size: 13px; }
+  .ask-thinking { font-size: 13px; animation: askpulse 1.2s ease-in-out infinite; }
+  @keyframes askpulse { 0%, 100% { opacity: .5; } 50% { opacity: 1; } }
   .ask-error, #ask-error { margin: 0 12px 8px; }
   .ask-note { padding: 0 12px 8px; font-size: 12px; }
 
@@ -91,8 +94,9 @@ const configured = Boolean(env.ANTHROPIC_API_KEY);
   :root[data-theme="dark"] .ask-q { background: #232a44; }
 
   @media (max-width: 520px) {
-    .ask-panel { right: 0; bottom: 0; width: 100vw; max-width: 100vw; height: 88vh; border-radius: 14px 14px 0 0; }
+    .ask-panel, .ask-panel.ask-wide { right: 0; bottom: 0; width: 100vw; max-width: 100vw; height: 88vh; max-height: none; border-radius: 14px 14px 0 0; }
     .ask-fab { right: 14px; bottom: 14px; }
+    .ask-wide-btn { display: none; }
   }
 </style>
 
@@ -106,14 +110,14 @@ const configured = Boolean(env.ANTHROPIC_API_KEY);
     var form = document.getElementById('ask-form');
     var input = document.getElementById('ask-q');
     var sendBtn = document.getElementById('ask-send');
-    var statusEl = document.getElementById('ask-status');
     var errorEl = document.getElementById('ask-error');
     var clearBtn = document.getElementById('ask-clear');
     var closeBtn = document.getElementById('ask-close');
+    var wideBtn = document.getElementById('ask-wide');
     var navAsk = document.getElementById('nav-ask');
     var CONFIGURED = panel.getAttribute('data-configured') === '1';
 
-    var TURNS_KEY = 'ask_turns', OPEN_KEY = 'ask_open';
+    var TURNS_KEY = 'ask_turns', OPEN_KEY = 'ask_open', WIDE_KEY = 'ask_wide';
     var turns = load();
     function load() { try { return JSON.parse(sessionStorage.getItem(TURNS_KEY) || '[]'); } catch (e) { return []; } }
     function save() {
@@ -174,14 +178,18 @@ const configured = Boolean(env.ANTHROPIC_API_KEY);
     }
     function details(text) { var d = document.createElement('details'); d.style.marginTop = '4px'; var s = document.createElement('summary'); s.className = 'muted'; s.style.cssText = 'cursor:pointer; font-size:12px;'; s.textContent = text; d.appendChild(s); return d; }
 
-    function renderTurn(t) {
+    function makeTurnBox(question) {
       var box = document.createElement('div'); box.className = 'ask-turn';
-      var q = document.createElement('div'); q.className = 'ask-q'; q.textContent = t.q; box.appendChild(q);
+      var q = document.createElement('div'); q.className = 'ask-q'; q.textContent = question; box.appendChild(q);
+      thread.appendChild(box);
+      return box;
+    }
+    function fillAnswer(box, t) {
       var a = document.createElement('div'); a.className = 'ask-a'; renderMarkdown(t.answer || '(sin respuesta)', a); box.appendChild(a);
       if (t.sql) { var d = details('SQL'); var pre = document.createElement('pre'); pre.className = 'ask-sql'; pre.textContent = t.sql; d.appendChild(pre); box.appendChild(d); }
       if (t.rows && t.rows.length) { var lbl = t.truncated ? ('Datos (' + t.rows.length + ' de ' + (t.rowCount || t.rows.length).toLocaleString() + ')') : ('Datos (' + (t.rowCount || t.rows.length).toLocaleString() + ')'); var d2 = details(lbl); var bx = document.createElement('div'); bx.style.marginTop = '6px'; bx.appendChild(rowsTable(t.rows)); d2.appendChild(bx); box.appendChild(d2); }
-      thread.appendChild(box);
     }
+    function renderTurn(t) { fillAnswer(makeTurnBox(t.q), t); }
     function renderAll() {
       // wipe rendered turns (keep the empty-state node)
       var kids = Array.prototype.slice.call(thread.children);
@@ -216,35 +224,47 @@ const configured = Boolean(env.ANTHROPIC_API_KEY);
       e.preventDefault();
       if (!CONFIGURED) return;
       var question = input.value.trim(); if (!question) return;
+      // Optimistic UI: show the question + clear the box immediately, then a
+      // "thinking" placeholder, so it's obvious the message was sent.
       errorEl.hidden = true;
+      empty.style.display = 'none';
+      input.value = ''; input.style.height = 'auto';
+      var box = makeTurnBox(question);
+      var thinking = document.createElement('div'); thinking.className = 'ask-thinking muted'; thinking.textContent = 'Ivan está pensando…';
+      box.appendChild(thinking);
+      scrollBottom();
       sendBtn.disabled = true;
-      statusEl.textContent = 'Escribiendo la consulta, verificándola y ejecutándola…';
-      statusEl.hidden = false;
       var history = turns.slice(-6).map(function (t) { return { question: t.q, sql: t.sql || null, answer: t.answer || '' }; });
+      function dropThinking() { if (thinking.parentNode) thinking.parentNode.removeChild(thinking); }
       try {
         var res = await fetch('/api/ask', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ question: question, history: history }) });
         var data = await res.json();
-        statusEl.hidden = true;
+        dropThinking();
         if (!res.ok || data.error) {
-          errorEl.textContent = data.error || ('Error (' + res.status + ')');
-          if (data.sql) errorEl.textContent += '  ·  SQL: ' + data.sql;
-          errorEl.hidden = false;
+          var eb = document.createElement('div'); eb.className = 'banner err'; eb.style.margin = '2px 0 0';
+          eb.textContent = data.error || ('Error (' + res.status + ')'); if (data.sql) eb.textContent += '  ·  SQL: ' + data.sql;
+          box.appendChild(eb);
         } else {
           var turn = { q: question, answer: data.answer || '', sql: data.sql || null, rows: (data.rows || []).slice(0, 50), rowCount: data.rowCount || (data.rows ? data.rows.length : 0), truncated: !!data.truncated };
           turns.push(turn); save();
-          empty.style.display = 'none';
-          renderTurn(turn); scrollBottom();
-          input.value = ''; input.style.height = 'auto';
+          fillAnswer(box, turn);
         }
+        scrollBottom();
       } catch (err) {
-        statusEl.hidden = true;
-        errorEl.textContent = 'Error de red: ' + (err && err.message ? err.message : err);
-        errorEl.hidden = false;
+        dropThinking();
+        var e2 = document.createElement('div'); e2.className = 'banner err'; e2.style.margin = '2px 0 0';
+        e2.textContent = 'Error de red: ' + (err && err.message ? err.message : err);
+        box.appendChild(e2); scrollBottom();
       } finally {
         sendBtn.disabled = false;
         if (CONFIGURED) input.focus();
       }
     });
+
+    // Widen / narrow the panel (desktop only). Persisted across navigation.
+    function setWide(w) { panel.classList.toggle('ask-wide', w); if (wideBtn) wideBtn.textContent = w ? '⤡' : '⤢'; try { sessionStorage.setItem(WIDE_KEY, w ? '1' : '0'); } catch (e) {} }
+    if (wideBtn) wideBtn.addEventListener('click', function () { setWide(!panel.classList.contains('ask-wide')); scrollBottom(); });
+    setWide((function () { try { return sessionStorage.getItem(WIDE_KEY) === '1'; } catch (e) { return false; } })());
 
     // Rehydrate on every page load (conversation survives navigation).
     renderAll();
