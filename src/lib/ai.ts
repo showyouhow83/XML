@@ -25,6 +25,30 @@ export const DEFAULT_MODELS: ModelConfig = {
   summary: 'claude-opus-4-8',
 };
 
+// Models the user can pick for Ivan on the AI settings page, cheapest → most
+// capable. Sonnet is the standing default (proven equal to Opus on the accuracy
+// quiz at ~half the cost). Other providers (Gemini, GPT) would slot in here once
+// they have their own API key AND have been scored by the ai-quiz harness — we
+// don't put an unvalidated model in front of the financial data.
+export interface AiModelChoice {
+  id: string;
+  label: string;
+  note: string;
+  price: string;
+}
+export const AI_MODEL_CHOICES: AiModelChoice[] = [
+  { id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5', note: 'Fastest & cheapest', price: '$1 / $5 per 1M' },
+  { id: 'claude-sonnet-5', label: 'Claude Sonnet 5', note: 'Balanced — the default (matched Opus on the quiz)', price: '$3 / $15 per 1M' },
+  { id: 'claude-opus-4-8', label: 'Claude Opus 4.8', note: 'Higher reasoning', price: '$5 / $25 per 1M' },
+  { id: 'claude-fable-5', label: 'Claude Fable 5', note: 'Most capable', price: '$10 / $50 per 1M' },
+];
+export function isValidAiModel(id: string | null | undefined): id is string {
+  return !!id && AI_MODEL_CHOICES.some((m) => m.id === id);
+}
+export function aiModelLabel(id: string | null | undefined): string {
+  return AI_MODEL_CHOICES.find((m) => m.id === id)?.label ?? 'Deployment default';
+}
+
 // Adaptive extended thinking is available on Opus/Sonnet 4.6+ (and Fable/Mythos 5).
 // Older tiers (e.g. Haiku 4.5) reject `{type:'adaptive'}`, so omit thinking there.
 function thinkingFor(model: string): Anthropic.ThinkingConfigParam | undefined {

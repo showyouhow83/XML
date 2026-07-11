@@ -1,0 +1,105 @@
+---
+import { env } from 'cloudflare:workers';
+import Base from '../layouts/Base.astro';
+import { ensureSchema, getAiModel } from '../lib/db';
+import { AI_MODEL_CHOICES, DEFAULT_MODELS, aiModelLabel } from '../lib/ai';
+
+const aiOn = Boolean(env.ANTHROPIC_API_KEY);
+
+let current: string | null = null;
+let dbError: string | null = null;
+if (env.DB) {
+  try {
+    await ensureSchema(env.DB);
+    current = await getAiModel(env.DB);
+  } catch (err) {
+    dbError = (err as Error).message;
+  }
+}
+
+// What "Deployment default" actually resolves to (Worker var, else code default).
+const deployDefault = env.AI_MODEL_SQL || DEFAULT_MODELS.sql;
+const saved = Astro.url.searchParams.get('saved');
+const errored = Astro.url.searchParams.get('error');
+---
+
+<Base title="Ivan · AI · Financing Inbox" active="settings">
+  <p class="crumb"><a href="/settings">Settings</a> › Ivan · AI</p>
+  <h1>Ivan · AI</h1>
+  <p class="sub">Ivan answers questions about your invoices in plain Spanish or English. Choose which model powers him.</p>
+
+  {dbError && <div class="banner err">{dbError}</div>}
+  {saved === 'model' && <div class="banner ok">Model saved. Ivan will use it on your next question.</div>}
+  {errored === 'model' && <div class="banner err">That model isn’t available — pick one from the list.</div>}
+  {!aiOn && (
+    <div class="banner warn">
+      Ivan isn’t active yet — add the <code>ANTHROPIC_API_KEY</code> secret to the Worker. You can still pick a model here; it takes effect once the key is set.
+    </div>
+  )}
+
+  <section class="panel">
+    <h2>Model</h2>
+    <p class="muted" style="margin-top:0;">
+      Pick a stronger model when you want more careful reasoning, or a cheaper one for everyday questions. The choice applies to
+      all of Ivan’s steps (writing the SQL, reviewing it, and summarizing). Current: <strong>{aiModelLabel(current)}</strong>.
+    </p>
+
+    <form method="post" action="/api/ai-model">
+      <div class="model-list">
+        <label class="model-opt">
+          <input type="radio" name="model" value="default" checked={current === null} />
+          <span class="model-main">
+            <span class="model-name">Deployment default <span class="pill muted">{aiModelLabel(deployDefault)}</span></span>
+            <span class="muted">Whatever the deployment is set to (currently {aiModelLabel(deployDefault)}). Recommended.</span>
+          </span>
+        </label>
+
+        {AI_MODEL_CHOICES.map((m) => (
+          <label class="model-opt">
+            <input type="radio" name="model" value={m.id} checked={current === m.id} />
+            <span class="model-main">
+              <span class="model-name">{m.label} <span class="pill muted">{m.price}</span></span>
+              <span class="muted">{m.note}</span>
+            </span>
+          </label>
+        ))}
+      </div>
+      <p style="margin:16px 0 0;"><button class="btn" type="submit">Save model</button></p>
+    </form>
+  </section>
+
+  <section class="panel" style="margin-top:20px;">
+    <h2>How Ivan answers</h2>
+    <p class="muted" style="margin-top:0;">
+      Because this drives accounting data, Ivan is built to avoid silent wrong answers: he <strong>reasons about the schema and
+      writes a read-only SQL query</strong>, a second pass <strong>reviews that SQL</strong> for the classic traps (vendor vs.
+      client, mixing colones and dollars, wrong date window), the query is validated as a single read-only <code>SELECT</code>
+      and run on your data, then the rows are <strong>summarized with the assumptions stated</strong>. Every answer shows the SQL
+      and the rows, so you can audit every number. If a question is genuinely ambiguous, he asks instead of guessing.
+    </p>
+  </section>
+
+  <section class="panel" style="margin-top:20px;">
+    <h2>Other providers</h2>
+    <p class="muted" style="margin-top:0; margin-bottom:0;">
+      Only Claude models are offered today. Gemini and GPT can be added here later — each needs its own API key on the Worker
+      (<code>GEMINI_API_KEY</code> / <code>OPENAI_API_KEY</code>) and, before it’s allowed to write SQL over your real invoices,
+      a pass through the <strong>accuracy quiz</strong> (<code>npm run ai-quiz</code>) so we don’t put an unproven model in front
+      of your financial data. Ask and I’ll wire whichever you want to trial.
+    </p>
+  </section>
+
+  <style>
+    .model-list { display: flex; flex-direction: column; gap: 8px; }
+    .model-opt {
+      display: flex; gap: 10px; align-items: flex-start;
+      padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; cursor: pointer;
+    }
+    .model-opt:hover { background: rgba(0,0,0,.02); }
+    .model-opt:has(input:checked) { border-color: var(--brand); box-shadow: 0 0 0 1px var(--brand) inset; }
+    .model-opt input { margin-top: 3px; }
+    .model-main { display: flex; flex-direction: column; gap: 2px; }
+    .model-name { font-weight: 600; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    @media (prefers-color-scheme: dark) { .model-opt:hover { background: rgba(255,255,255,.03); } }
+  </style>
+</Base>

@@ -1,8 +1,9 @@
 ---
 import { env } from 'cloudflare:workers';
 import Base from '../layouts/Base.astro';
-import { ensureSchema, listMailboxes, pdfsInD1Count, pdfInvoiceCount, getCollectionSchedule } from '../lib/db';
+import { ensureSchema, listMailboxes, pdfsInD1Count, pdfInvoiceCount, getCollectionSchedule, getAiModel } from '../lib/db';
 import { hasLegacyPdfObjects } from '../lib/pdfs';
+import { aiModelLabel } from '../lib/ai';
 import { describeSchedule, DEFAULT_SCHEDULE, type CollectionSchedule } from '../lib/schedule';
 
 const aiOn = Boolean(env.ANTHROPIC_API_KEY);
@@ -13,21 +14,25 @@ let pdfsInD1 = 0;
 let pdfCount = 0;
 let legacyPdfs = false;
 let schedule: CollectionSchedule = DEFAULT_SCHEDULE;
+let aiModel: string | null = null;
 let dbError: string | null = null;
 if (env.DB) {
   try {
     await ensureSchema(env.DB);
-    [mailboxCount, pdfsInD1, pdfCount, schedule, legacyPdfs] = await Promise.all([
+    [mailboxCount, pdfsInD1, pdfCount, schedule, legacyPdfs, aiModel] = await Promise.all([
       listMailboxes(env.DB).then((m) => m.length),
       pdfsInD1Count(env.DB),
       pdfInvoiceCount(env.DB),
       getCollectionSchedule(env.DB),
       env.PDFS ? hasLegacyPdfObjects(env.PDFS) : Promise.resolve(false),
+      getAiModel(env.DB),
     ]);
   } catch (err) {
     dbError = (err as Error).message;
   }
 }
+// What Ivan effectively runs: the in-app choice, else the deploy default.
+const effectiveAiModel = aiModel || env.AI_MODEL_SQL || 'claude-opus-4-8';
 // The organize button should appear only when there's actual work left: PDFs
 // still as base64 in D1, or objects still at the old flat R2 keys. Once
 // everything is foldered, both are zero and the button goes away (new invoices
@@ -50,13 +55,13 @@ const needsOrganize = r2On && (pdfsInD1 > 0 || legacyPdfs);
       </span>
     </a>
 
-    <div class="setting-card">
+    <a class="setting-card" href="/ai">
       <span class="setting-ic">🤖</span>
       <span>
         <strong>Ivan · Ask AI</strong>
-        <span class="muted">{aiOn ? 'Active — tap 💬 Ivan (bottom-right) on any page to chat.' : 'Not configured — add the ANTHROPIC_API_KEY secret to the Worker.'}</span>
+        <span class="muted">{aiOn ? <>Model: <strong>{aiModelLabel(effectiveAiModel)}</strong> · tap 💬 Ivan on any page to chat</> : 'Not configured — add the ANTHROPIC_API_KEY secret'} →</span>
       </span>
-    </div>
+    </a>
 
     <a class="setting-card" href="/collection">
       <span class="setting-ic">⟳</span>
