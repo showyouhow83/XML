@@ -21,7 +21,9 @@ folder.
 - **D1 database:** `xml-db` (`c067759f-d1ee-44d8-8987-da4ff0ffd01f`)
 - **KV (Astro sessions):** `SESSION` (`45ae82c006684626bb5fb721799de4ea`)
 - **R2 bucket (invoice PDFs):** `xml-pdfs` (binding `PDFS`) — raw PDF bytes live
-  here, not base64 in D1. Create it once: `wrangler r2 bucket create xml-pdfs`.
+  here, not base64 in D1, grouped into a **folder per mailbox**
+  (`<mailbox-email>/<clave>.pdf`) so each client's PDFs sit together. Create it
+  once: `wrangler r2 bucket create xml-pdfs`.
 - **Repo:** github.com/showyouhow83/XML (default branch `main`)
 - **Deploy:** push to `main` → Cloudflare **Workers Builds** auto-builds & deploys
   (`npm run build` then `wrangler deploy`). No manual deploy step.
@@ -65,9 +67,10 @@ in a Node "collector" on GitHub Actions (nightly cron + on-demand dispatch).
   otros_cargos / comprobante), source_account, message_uid, has_pdf, received_at,
   `detail_json`, created_at.
 - **attachments** — `clave` (PK), xml_content (raw XML in D1), pdf_content
-  (legacy base64 — PDFs now live in **R2** as raw bytes under `pdf/<clave>.pdf`;
-  this column is nulled once a PDF is migrated to R2, and is only a fallback for
-  not-yet-migrated PDFs).
+  (legacy base64 — PDFs now live in **R2** as raw bytes under
+  `<mailbox-email>/<clave>.pdf`, a folder per mailbox; old objects were flat at
+  `pdf/<clave>.pdf` and reads still fall back to that key). This column is nulled
+  once a PDF is migrated to R2, and is only a fallback for not-yet-migrated PDFs.
 - **app_state** — tiny key/value flags. Holds the **collection lock** (`collection_run`):
   set while a collection is running so only one runs at a time across all clients;
   released on finish, or auto-freed after a 60-min stale timeout. Also holds the
@@ -154,8 +157,10 @@ Later:
 - [ ] Line-item-level table + CSV (analysis across all invoices).
 - [ ] Reporting / period summaries per client (for tax filing).
 - [x] **R2 for PDF storage** — PDFs are stored in R2 (raw bytes) instead of
-      base64 in D1; ingest uploads to R2, download reads R2 (D1 fallback), and a
-      Settings button migrates any existing D1 PDFs. Keeps D1 lean + off the 10 GB cap.
+      base64 in D1, **grouped into a folder per mailbox** (`<email>/<clave>.pdf`);
+      ingest uploads to R2, download reads R2 (D1 fallback), a Settings button
+      migrates/organizes existing PDFs, and each Mailboxes row can **download all
+      its PDFs as a zip**. Keeps D1 lean + off the 10 GB cap.
 - [ ] Onboard many client mailboxes.
 
 ## How to work on it
@@ -174,6 +179,16 @@ Later:
 
 ## Changelog (newest first)
 
+- **#21** **PDFs grouped by mailbox + per-mailbox download** — R2 objects now live
+  in a **folder per mailbox** (`<mailbox-email>/<clave>.pdf`) instead of a flat
+  `pdf/<clave>.pdf`, so each client's PDFs sit together (browsable in the R2
+  dashboard, and zippable). New **⬇ PDFs** button on each Mailboxes row streams a
+  zip of that mailbox's PDFs (`/api/download-client`, via `client-zip`). The
+  Settings PDF button became **“Move / organize PDFs by mailbox”** — an idempotent,
+  resumable (offset-paged) pass that both uploads any base64 still in D1 and folds
+  legacy flat-key objects into their mailbox folder. Reads fall back to the legacy
+  key, so nothing breaks mid-migration. New: `src/lib/pdfs.ts` foldering
+  (`pdfKey`/`legacyPdfKey`/`foldPdf`), `/api/download-client`; dep `client-zip`.
 - **#20** **Ivan runs on Sonnet** — the quiz showed **sonnet, hybrid and opus all
   18/18** (haiku 17 + 1 clarify, 0 wrong), so Ivan's three steps now default to
   `claude-sonnet-5` via `wrangler.jsonc` vars (≈½ the Opus cost, no dashboard

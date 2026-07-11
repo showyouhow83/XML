@@ -573,14 +573,14 @@ export async function exportRows(db: D1Database, f: InvoiceFilters) {
 export async function getAttachment(db: D1Database, clave: string) {
   return db
     .prepare(
-      `SELECT a.xml_content, a.pdf_content, i.xml_filename, i.pdf_filename
+      `SELECT a.xml_content, a.pdf_content, i.xml_filename, i.pdf_filename, i.source_account
        FROM attachments a JOIN invoices i ON i.clave = a.clave WHERE a.clave = ?`
     )
     .bind(clave)
-    .first<{ xml_content: string | null; pdf_content: string | null; xml_filename: string | null; pdf_filename: string | null }>();
+    .first<{ xml_content: string | null; pdf_content: string | null; xml_filename: string | null; pdf_filename: string | null; source_account: string | null }>();
 }
 
-// --- PDF migration (D1 base64 -> R2) helpers ---
+// --- PDF storage helpers (D1 base64 -> R2, and organizing R2 into mailbox folders) ---
 
 /** How many PDFs are still stored as base64 in D1 (i.e. not yet moved to R2). */
 export async function pdfsInD1Count(db: D1Database): Promise<number> {
@@ -590,18 +590,48 @@ export async function pdfsInD1Count(db: D1Database): Promise<number> {
   return row?.n ?? 0;
 }
 
-/** Next batch of PDFs still living in D1, for moving to R2. */
-export async function nextD1PdfBatch(db: D1Database, limit: number): Promise<{ clave: string; pdf_content: string }[]> {
-  const { results } = await db
-    .prepare(`SELECT clave, pdf_content FROM attachments WHERE pdf_content IS NOT NULL LIMIT ?`)
-    .bind(limit)
-    .all<{ clave: string; pdf_content: string }>();
-  return results ?? [];
-}
-
 /** Drop a PDF's base64 from D1 once it's safely in R2. */
 export async function clearD1Pdf(db: D1Database, clave: string): Promise<void> {
   await db.prepare(`UPDATE attachments SET pdf_content = NULL WHERE clave = ?`).bind(clave).run();
+}
+
+/** Total invoices that have a PDF (in R2 and/or D1). */
+export async function pdfInvoiceCount(db: D1Database): Promise<number> {
+  const row = await db.prepare(`SELECT COUNT(*) AS n FROM invoices WHERE has_pdf = 1`).first<{ n: number }>();
+  return row?.n ?? 0;
+}
+
+/** A page of invoices with PDFs, plus their mailbox + any base64 still in D1 —
+ *  used to move PDFs into R2 and group them into mailbox folders. */
+export async function pdfInvoiceBatch(
+  db: D1Database,
+  limit: number,
+  offset: number
+): Promise<{ clave: string; source_account: string | null; pdf_content: string | null }[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT i.clave, i.source_account, a.pdf_content
+       FROM invoices i LEFT JOIN attachments a ON a.clave = i.clave
+       WHERE i.has_pdf = 1 ORDER BY i.clave LIMIT ? OFFSET ?`
+    )
+    .bind(limit, offset)
+    .all<{ clave: string; source_account: string | null; pdf_content: string | null }>();
+  return results ?? [];
+}
+
+/** Every PDF for one mailbox (for the per-mailbox zip download). */
+export async function clientPdfList(
+  db: D1Database,
+  account: string
+): Promise<{ clave: string; pdf_filename: string | null; consecutivo: string | null }[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT clave, pdf_filename, consecutivo FROM invoices
+       WHERE has_pdf = 1 AND source_account = ? ORDER BY fecha_emision`
+    )
+    .bind(account)
+    .all<{ clave: string; pdf_filename: string | null; consecutivo: string | null }>();
+  return results ?? [];
 }
 
 /** Every stored column for one invoice, with detail_json parsed. For the detail page. */

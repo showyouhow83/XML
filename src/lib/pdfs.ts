@@ -1,8 +1,21 @@
-// PDF storage in R2 (object storage). PDFs are large binaries, so they live in
-// R2 as raw bytes rather than base64 in D1 — keeps the database lean and avoids
-// D1's 10 GB-per-database cap. XML stays in D1 (small, queried, served directly).
+// PDF storage in R2. PDFs are large binaries, so they live in R2 as raw bytes
+// rather than base64 in D1 — keeps the database lean and off D1's 10 GB cap.
+// Objects are grouped into a folder per mailbox: `<mailbox>/<clave>.pdf`, so a
+// client's PDFs sit together (browsable in the R2 dashboard, zippable per client).
+// Legacy objects were stored flat at `pdf/<clave>.pdf`; reads fall back to that.
 
-export function pdfKey(clave: string): string {
+/** Sanitize a mailbox email into a safe R2 folder name. */
+export function accountFolder(account: string | null | undefined): string {
+  const a = (account || '').trim().toLowerCase();
+  return a ? a.replace(/[^a-z0-9._@+-]+/g, '_') : '_unassigned';
+}
+
+export function pdfKey(account: string | null | undefined, clave: string): string {
+  return `${accountFolder(account)}/${clave}.pdf`;
+}
+
+/** Old flat key scheme (pre-foldering). Kept for read fallback + migration. */
+export function legacyPdfKey(clave: string): string {
   return `pdf/${clave}.pdf`;
 }
 
@@ -13,10 +26,10 @@ export function base64ToBytes(b64: string): Uint8Array<ArrayBuffer> {
   return bytes;
 }
 
-/** Store a PDF (given as base64) in R2 under its clave. Returns true on success. */
-export async function putPdf(bucket: R2Bucket, clave: string, base64: string): Promise<boolean> {
+/** Store a PDF (base64) in R2 under its mailbox folder. Returns true on success. */
+export async function putPdf(bucket: R2Bucket, account: string | null | undefined, clave: string, base64: string): Promise<boolean> {
   try {
-    await bucket.put(pdfKey(clave), base64ToBytes(base64), {
+    await bucket.put(pdfKey(account, clave), base64ToBytes(base64), {
       httpMetadata: { contentType: 'application/pdf' },
     });
     return true;
@@ -25,9 +38,28 @@ export async function putPdf(bucket: R2Bucket, clave: string, base64: string): P
   }
 }
 
-/** Fetch a PDF's bytes from R2, or null if not present. */
-export async function getPdf(bucket: R2Bucket, clave: string): Promise<ArrayBuffer | null> {
-  const obj = await bucket.get(pdfKey(clave));
-  if (!obj) return null;
-  return obj.arrayBuffer();
+/** Fetch a PDF object, trying the mailbox-foldered key then the legacy flat key. */
+export async function getPdfObject(
+  bucket: R2Bucket,
+  account: string | null | undefined,
+  clave: string
+): Promise<R2ObjectBody | null> {
+  return (await bucket.get(pdfKey(account, clave))) ?? (await bucket.get(legacyPdfKey(clave)));
+}
+
+export async function getPdf(bucket: R2Bucket, account: string | null | undefined, clave: string): Promise<ArrayBuffer | null> {
+  const obj = await getPdfObject(bucket, account, clave);
+  return obj ? obj.arrayBuffer() : null;
+}
+
+/** Move a PDF from the legacy flat key into its mailbox folder.
+ *  Returns 'moved' | 'already' (foldered key exists) | 'missing' (nothing to move). */
+export async function foldPdf(bucket: R2Bucket, account: string | null | undefined, clave: string): Promise<'moved' | 'already' | 'missing'> {
+  const folded = pdfKey(account, clave);
+  if (await bucket.head(folded)) return 'already';
+  const legacy = await bucket.get(legacyPdfKey(clave));
+  if (!legacy) return 'missing';
+  await bucket.put(folded, await legacy.arrayBuffer(), { httpMetadata: { contentType: 'application/pdf' } });
+  await bucket.delete(legacyPdfKey(clave));
+  return 'moved';
 }

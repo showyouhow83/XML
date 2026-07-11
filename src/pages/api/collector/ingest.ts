@@ -29,7 +29,7 @@ export const POST: APIRoute = async ({ request }) => {
       // Prefer R2 for the PDF; fall back to base64-in-D1 if the bucket isn't bound.
       let pdfInR2 = false;
       if (r.pdfContentBase64 && env.PDFS) {
-        pdfInR2 = await putPdf(env.PDFS, r.clave, r.pdfContentBase64);
+        pdfInR2 = await putPdf(env.PDFS, r.sourceAccount, r.clave, r.pdfContentBase64);
       }
       const result = await upsertInvoice(env.DB, r, pdfInR2);
       if (result === 'inserted') inserted++;

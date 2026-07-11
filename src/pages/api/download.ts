@@ -32,9 +32,9 @@ export const GET: APIRoute = async ({ url }) => {
     'content-type': 'application/pdf',
     'content-disposition': `attachment; filename="${safeName(att.pdf_filename, clave + '.pdf')}"`,
   };
-  // Prefer R2 (where PDFs now live); fall back to a base64 copy still in D1.
+  // Prefer R2 (mailbox folder, then legacy flat key); fall back to base64 in D1.
   if (env.PDFS) {
-    const buf = await getPdf(env.PDFS, clave);
+    const buf = await getPdf(env.PDFS, att.source_account, clave);
     if (buf) return new Response(buf, { headers: pdfHeaders });
   }
   if (att.pdf_content == null) return new Response('No PDF stored', { status: 404 });
