@@ -108,9 +108,13 @@ GitHub repo → Settings → Secrets → Actions:
   **Collect now** button is disabled on every client (shared D1 lock), and the
   GitHub Actions workflow has a `concurrency` group so a second trigger queues
   instead of running concurrently — no racing, no double-pulling.
-- **Ask AI** page: ask in plain language → Claude writes a read-only SQL query
-  over `invoices`, runs it on D1, and explains the answer (shows the SQL + rows).
-  Needs the `ANTHROPIC_API_KEY` secret.
+- **Ivan** — a floating **Ask AI chat** (bottom-right on every page): ask in plain
+  Spanish/English → Claude writes a read-only SQL query over `invoices`, runs it
+  on D1, and explains the answer in your language (renders tables; shows SQL +
+  rows). The conversation **persists across navigation** (sessionStorage), so you
+  can open an invoice while chatting. Needs the `ANTHROPIC_API_KEY` secret.
+- Nav is organized as **Dashboard / Settings**; **Mailboxes** lives under
+  **Settings**. Layout is responsive (usable on phones).
 
 ## Roadmap (where we're going)
 
@@ -151,6 +155,13 @@ Later:
 
 ## Changelog (newest first)
 
+- **#16** **Ivan chat widget + Settings + responsive** — Ask AI became **Ivan**, a
+  floating chat available on every page (`src/components/AskWidget.astro` in the
+  layout) whose conversation persists across navigation via `sessionStorage`;
+  answers reply in the user's language (Spanish/English) and render Markdown
+  tables. Nav reorganized to **Dashboard / Settings** with a new `/settings` hub
+  and Mailboxes moved under it; the old `/ask` page redirects to `/`. Mobile/
+  responsive CSS pass.
 - **#15** **Single-run collection lock** — only one collection can run at a time
   across all clients. A shared D1 lock (`app_state.collection_run`) disables the
   **Collect now** button everywhere while a run is in progress (auto-freed after a

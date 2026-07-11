@@ -146,6 +146,30 @@ form.inline { display: inline; }
 
 code { background: #f3f4f6; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
 
+/* Breadcrumb */
+.crumb { font-size: 12px; color: var(--muted); margin: 0 0 10px; }
+.crumb a { color: var(--muted); text-decoration: none; }
+.crumb a:hover { color: var(--brand); }
+
+/* Settings hub */
+.settings-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+.setting-card { display: flex; gap: 12px; align-items: flex-start; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; text-decoration: none; color: var(--ink); }
+a.setting-card:hover { border-color: var(--brand); background: #fafbff; }
+.setting-card .setting-ic { font-size: 22px; line-height: 1.1; }
+.setting-card strong { display: block; margin-bottom: 3px; }
+.setting-card .muted { display: block; font-size: 13px; }
+
+/* Mobile / small screens */
+@media (max-width: 640px) {
+  main { padding: 16px; }
+  .topnav { padding: 10px 14px; gap: 8px; flex-wrap: wrap; }
+  .topnav nav { gap: 4px; }
+  .topnav nav a { padding: 6px 9px; }
+  h1 { font-size: 18px; }
+  .card .value { font-size: 20px; }
+  th, td { padding: 8px 10px; }
+}
+
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #0f1117; --panel: #171a21; --ink: #e5e7eb; --muted: #9099a8;
@@ -158,4 +182,8 @@ code { background: #f3f4f6; padding: 1px 5px; border-radius: 4px; font-size: 12p
   .btn.secondary { background: #1f2430; }
   .btn.secondary:hover { background: #262b36; }
   code { background: #1f2430; }
+  a.setting-card:hover { background: #1b1f2b; }
+  .ask-q { background: #232a44; }
+  .ask-input textarea { background: #1f2430; }
+  #ask-panel pre, .ask-a code { background: #1f2430; }
 }

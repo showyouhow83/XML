@@ -34,7 +34,8 @@ function statusInfo(s: string | null) {
 const anyCollecting = mailboxes.some((m) => (m.last_status || '').toLowerCase().startsWith('collecting'));
 ---
 
-<Base title="Mailboxes · Financing Inbox" active="mailboxes">
+<Base title="Mailboxes · Financing Inbox" active="settings">
+  <p class="crumb"><a href="/settings">Settings</a> › Client mailboxes</p>
   <h1>Client mailboxes</h1>
   <p class="sub">IMAP accounts the collector reads invoices from. Passwords are encrypted before they touch the database.</p>
 
