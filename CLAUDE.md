@@ -179,6 +179,19 @@ Later:
 
 ## Changelog (newest first)
 
+- **#22** **Instant button/action feedback + Collection card links to its schedule**
+  — every button now shows its press was captured and, when it starts async work
+  (a form POST/redirect, a fetch, a file download), a **spinner + disabled busy
+  state** until it finishes, so the app never looks frozen while something runs in
+  the background (this is why the PDF-organize button felt dead). It's global: a
+  small script in `Base.astro` busies the submitting button on any form submit
+  (skipping `data-no-busy` forms like Ivan's, and cancelled/`confirm()` submits),
+  gives download links (`/api/…`) a transient spinner, and exposes
+  `window.__setBusy(el,on,label)` (used by the PDF-organize button). Press/focus/
+  busy styles live in `app.css`. Also: the **Collection** settings card is now a
+  link to the **Collection schedule** section (`#collection-schedule`) — like the
+  Mailboxes card — and keeps summarizing the active cadence (e.g. “Every other
+  Thursday”). Verified with a headless-Chromium harness (13/13).
 - **#21** **PDFs grouped by mailbox + per-mailbox download** — R2 objects now live
   in a **folder per mailbox** (`<mailbox-email>/<clave>.pdf`) instead of a flat
   `pdf/<clave>.pdf`, so each client's PDFs sit together (browsable in the R2

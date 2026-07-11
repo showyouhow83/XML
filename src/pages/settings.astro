@@ -57,13 +57,13 @@ const WEEKDAYS = [
       </span>
     </div>
 
-    <div class="setting-card">
+    <a class="setting-card" href="#collection-schedule">
       <span class="setting-ic">⟳</span>
       <span>
         <strong>Collection</strong>
-        <span class="muted">{collectOn ? '“Collect now” is enabled (one run at a time).' : 'Add GH_DISPATCH_TOKEN to enable “Collect now”.'} Auto‑runs: <strong>{describeSchedule(schedule)}</strong>.</span>
+        <span class="muted">{collectOn ? '“Collect now” is enabled (one run at a time).' : 'Add GH_DISPATCH_TOKEN to enable “Collect now”.'} Auto‑runs: <strong>{describeSchedule(schedule)}</strong> · edit schedule →</span>
       </span>
-    </div>
+    </a>
 
     <div class="setting-card">
       <span class="setting-ic">🗄️</span>
@@ -85,7 +85,7 @@ const WEEKDAYS = [
     </div>
   </div>
 
-  <section class="panel" style="margin-top:20px;">
+  <section class="panel" id="collection-schedule" style="margin-top:20px; scroll-margin-top:16px;">
     <h2>Collection schedule</h2>
     <p class="muted" style="margin-top:0;">
       How often the <strong>automatic</strong> collection runs. <strong>Collect now</strong> always works regardless of this.
@@ -137,8 +137,10 @@ const WEEKDAYS = [
       var status = document.getElementById('pdf-status');
       if (btn) {
         btn.addEventListener('click', async function () {
-          btn.disabled = true;
-          var offset = 0, moved = 0;
+          if (btn.getAttribute('data-busy') === '1') return;
+          // Instant feedback: spinner + label right away, before the first request.
+          if (window.__setBusy) window.__setBusy(btn, true, 'Organizando…'); else btn.disabled = true;
+          var offset = 0, moved = 0, done = false;
           try {
             while (true) {
               var res = await fetch('/api/migrate-pdfs', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ offset: offset }) });
@@ -146,11 +148,14 @@ const WEEKDAYS = [
               if (!res.ok || data.error) { status.textContent = data.error || ('Error ' + res.status); break; }
               moved += data.moved || 0;
               offset = data.offset;
-              if (data.done) { status.textContent = 'Listo — PDFs en R2 agrupados por buzón' + (moved ? ' (' + moved + ' movidos)' : '') + '. ✓'; btn.style.display = 'none'; break; }
+              if (data.done) { done = true; status.textContent = 'Listo — PDFs en R2 agrupados por buzón' + (moved ? ' (' + moved + ' movidos)' : '') + '. ✓'; break; }
               status.textContent = 'Organizando… ' + Math.min(offset, data.total) + '/' + data.total + ' (' + moved + ' movidos)';
             }
           } catch (e) { status.textContent = 'Error: ' + (e && e.message ? e.message : e); }
-          finally { btn.disabled = false; }
+          finally {
+            if (window.__setBusy) window.__setBusy(btn, false); else btn.disabled = false;
+            if (done) btn.style.display = 'none';
+          }
         });
       }
     })();

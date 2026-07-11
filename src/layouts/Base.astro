@@ -39,5 +39,70 @@ const gated = Boolean(env.APP_PASSWORD);
       <slot />
     </main>
     {nav && <AskWidget />}
+    <script is:inline>
+      (function () {
+        // App-wide click/submit feedback: a button should always show its press
+        // was captured and, when it kicks off async work (a form POST/redirect, a
+        // fetch, a file download), a busy/loading state until it finishes — so the
+        // app never looks frozen while something happens in the background.
+
+        // Toggle a busy state on a button or link. `label` (optional) swaps the
+        // text while busy; the CSS spinner comes from the `is-busy` class.
+        function setBusy(el, on, label) {
+          if (!el) return;
+          if (on) {
+            if (el.getAttribute('data-busy') === '1') return;
+            el.setAttribute('data-busy', '1');
+            el.classList.add('is-busy');
+            el.setAttribute('aria-busy', 'true');
+            if (label != null) {
+              el.setAttribute('data-prev-html', el.innerHTML);
+              el.innerHTML = label;
+            }
+            if (el.tagName === 'BUTTON') el.disabled = true;
+          } else {
+            el.removeAttribute('data-busy');
+            el.classList.remove('is-busy');
+            el.removeAttribute('aria-busy');
+            if (el.hasAttribute('data-prev-html')) {
+              el.innerHTML = el.getAttribute('data-prev-html');
+              el.removeAttribute('data-prev-html');
+            }
+            if (el.tagName === 'BUTTON') el.disabled = false;
+          }
+        }
+        window.__setBusy = setBusy;
+
+        // Form submits → busy the button that submitted, so POST→redirect flows
+        // (save mailbox, save schedule, collect now, delete…) give instant feedback
+        // and can't be double-submitted. Runs in the bubble phase and bails if the
+        // submit was already cancelled (e.g. a confirm() dialog or HTML5 validation),
+        // or the form opted out with data-no-busy (Ivan manages its own state).
+        document.addEventListener('submit', function (e) {
+          var form = e.target;
+          if (!form || form.nodeName !== 'FORM' || e.defaultPrevented) return;
+          if (form.hasAttribute('data-no-busy')) return;
+          var btn = e.submitter || form.querySelector('button[type="submit"], button:not([type])');
+          if (!btn || btn.disabled || btn.classList.contains('is-busy')) return;
+          btn.classList.add('is-busy');
+          btn.setAttribute('aria-busy', 'true');
+          // Disable on the next tick so the submitter's value is still sent, and
+          // the browser has already begun the navigation before we lock the button.
+          setTimeout(function () { btn.disabled = true; }, 0);
+        }, false);
+
+        // Download / file links (XML, PDF, per-mailbox zip, CSV export) navigate to
+        // an API route but don't reload the page, so nothing signals the click. Show
+        // a brief spinner to acknowledge it, then clear it (there's no load event).
+        document.addEventListener('click', function (e) {
+          var a = e.target.closest ? e.target.closest('a.btn[href]') : null;
+          if (!a || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey) return;
+          if ((a.getAttribute('href') || '').indexOf('/api/') === -1) return;
+          if (a.classList.contains('is-busy')) return;
+          setBusy(a, true);
+          setTimeout(function () { setBusy(a, false); }, 2500);
+        }, false);
+      })();
+    </script>
   </body>
 </html>
