@@ -1,25 +1,28 @@
 ---
 import { env } from 'cloudflare:workers';
 import Base from '../layouts/Base.astro';
-import { ensureSchema, listMailboxes } from '../lib/db';
+import { ensureSchema, listMailboxes, pdfsInD1Count } from '../lib/db';
 
 let mailboxCount = 0;
+let pdfsInD1 = 0;
 let dbError: string | null = null;
 if (env.DB) {
   try {
     await ensureSchema(env.DB);
     mailboxCount = (await listMailboxes(env.DB)).length;
+    pdfsInD1 = await pdfsInD1Count(env.DB);
   } catch (err) {
     dbError = (err as Error).message;
   }
 }
 const aiOn = Boolean(env.ANTHROPIC_API_KEY);
 const collectOn = Boolean(env.GH_DISPATCH_TOKEN);
+const r2On = Boolean(env.PDFS);
 ---
 
 <Base title="Settings · Financing Inbox" active="settings">
   <h1>Settings</h1>
-  <p class="sub">Manage how the app connects, collects, and answers.</p>
+  <p class="sub">Manage how the app connects, collects, answers, and stores.</p>
 
   {dbError && <div class="banner err">{dbError}</div>}
 
@@ -47,5 +50,48 @@ const collectOn = Boolean(env.GH_DISPATCH_TOKEN);
         <span class="muted">{collectOn ? '“Collect now” is enabled (one run at a time).' : 'Add GH_DISPATCH_TOKEN to enable “Collect now”.'} Nightly at 06:00 UTC.</span>
       </span>
     </div>
+
+    <div class="setting-card">
+      <span class="setting-ic">🗄️</span>
+      <span>
+        <strong>PDF storage</strong>
+        <span class="muted" id="pdf-status">
+          {r2On
+            ? pdfsInD1 > 0
+              ? `${pdfsInD1.toLocaleString()} PDF(s) still in the database — move them to R2 (cheaper, keeps D1 lean).`
+              : 'PDFs are stored in R2. ✓'
+            : 'PDFs are stored in the database. Create an R2 bucket named “xml-pdfs” and bind it as PDFS to move them to R2.'}
+        </span>
+        {r2On && pdfsInD1 > 0 && (
+          <span style="display:block; margin-top:8px;">
+            <button id="migrate-pdfs" class="btn secondary sm" type="button">Move PDFs to R2</button>
+          </span>
+        )}
+      </span>
+    </div>
   </div>
+
+  <script is:inline>
+    (function () {
+      var btn = document.getElementById('migrate-pdfs');
+      var status = document.getElementById('pdf-status');
+      if (!btn) return;
+      btn.addEventListener('click', async function () {
+        btn.disabled = true;
+        var total = 0;
+        try {
+          while (true) {
+            var res = await fetch('/api/migrate-pdfs', { method: 'POST' });
+            var data = await res.json();
+            if (!res.ok || data.error) { status.textContent = data.error || ('Error ' + res.status); break; }
+            total += data.migrated || 0;
+            if (data.remaining > 0 && (data.migrated || 0) === 0) { status.textContent = 'Algunos PDFs no se pudieron mover (' + data.remaining + ' restantes).'; break; }
+            if (data.remaining > 0) { status.textContent = 'Moviendo… ' + data.remaining + ' restantes (' + total + ' movidos)'; }
+            else { status.textContent = 'Listo — ' + total + ' PDF(s) movidos a R2. ✓'; btn.style.display = 'none'; break; }
+          }
+        } catch (e) { status.textContent = 'Error: ' + (e && e.message ? e.message : e); }
+        finally { btn.disabled = false; }
+      });
+    })();
+  </script>
 </Base>

@@ -1,6 +1,7 @@
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { ensureSchema, upsertInvoice, recordSync, type IngestRecord } from '../../../lib/db';
+import { putPdf } from '../../../lib/pdfs';
 
 // Receives extracted invoices from the collector and stores them.
 // Body: { mailboxId?, status?, syncedFrom?, lastUid?, uidvalidity?, records: IngestRecord[] }
@@ -25,7 +26,12 @@ export const POST: APIRoute = async ({ request }) => {
       continue;
     }
     try {
-      const result = await upsertInvoice(env.DB, r);
+      // Prefer R2 for the PDF; fall back to base64-in-D1 if the bucket isn't bound.
+      let pdfInR2 = false;
+      if (r.pdfContentBase64 && env.PDFS) {
+        pdfInR2 = await putPdf(env.PDFS, r.clave, r.pdfContentBase64);
+      }
+      const result = await upsertInvoice(env.DB, r, pdfInR2);
       if (result === 'inserted') inserted++;
       else updated++;
     } catch (err) {
