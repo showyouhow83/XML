@@ -89,10 +89,15 @@ const anyCollecting = mailboxes.some((m) => (m.last_status || '').toLowerCase().
                   <td class="muted">{fmtDateTime(m.last_synced_at)}</td>
                   <td><span class={`pill ${si.cls}`} title={si.title}>{si.text}</span></td>
                   <td class="right">
-                    <form class="inline" method="post" action="/api/mailboxes/delete" onsubmit="return confirm('Remove this mailbox?')">
-                      <input type="hidden" name="id" value={m.id} />
-                      <button class="btn danger sm" type="submit">Delete</button>
-                    </form>
+                    <span class="row-actions">
+                      {(counts[m.email] ?? 0) > 0 && (
+                        <a class="btn secondary sm" href={`/api/download-client?account=${encodeURIComponent(m.email)}`} title="Download every PDF for this mailbox as a zip">⬇ PDFs</a>
+                      )}
+                      <form class="inline" method="post" action="/api/mailboxes/delete" onsubmit="return confirm('Remove this mailbox?')">
+                        <input type="hidden" name="id" value={m.id} />
+                        <button class="btn danger sm" type="submit">Delete</button>
+                      </form>
+                    </span>
                   </td>
                 </tr>
               );

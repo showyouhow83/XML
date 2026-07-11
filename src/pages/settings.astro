@@ -1,19 +1,21 @@
 ---
 import { env } from 'cloudflare:workers';
 import Base from '../layouts/Base.astro';
-import { ensureSchema, listMailboxes, pdfsInD1Count, getCollectionSchedule } from '../lib/db';
+import { ensureSchema, listMailboxes, pdfsInD1Count, pdfInvoiceCount, getCollectionSchedule } from '../lib/db';
 import { describeSchedule, DEFAULT_SCHEDULE, type CollectionSchedule } from '../lib/schedule';
 
 let mailboxCount = 0;
 let pdfsInD1 = 0;
+let pdfCount = 0;
 let schedule: CollectionSchedule = DEFAULT_SCHEDULE;
 let dbError: string | null = null;
 if (env.DB) {
   try {
     await ensureSchema(env.DB);
-    [mailboxCount, pdfsInD1, schedule] = await Promise.all([
+    [mailboxCount, pdfsInD1, pdfCount, schedule] = await Promise.all([
       listMailboxes(env.DB).then((m) => m.length),
       pdfsInD1Count(env.DB),
+      pdfInvoiceCount(env.DB),
       getCollectionSchedule(env.DB),
     ]);
   } catch (err) {
@@ -70,13 +72,13 @@ const WEEKDAYS = [
         <span class="muted" id="pdf-status">
           {r2On
             ? pdfsInD1 > 0
-              ? `${pdfsInD1.toLocaleString()} PDF(s) still in the database — move them to R2 (cheaper, keeps D1 lean).`
-              : 'PDFs are stored in R2. ✓'
-            : 'PDFs are stored in the database. Create an R2 bucket named “xml-pdfs” and bind it as PDFS to move them to R2.'}
+              ? `${pdfsInD1.toLocaleString()} PDF(s) still in the database — move them to R2, grouped by mailbox.`
+              : 'PDFs are stored in R2, grouped by mailbox. ✓'
+            : 'PDFs are stored in the database. Create an R2 bucket named “xml-pdfs” and bind it as PDFS to move them.'}
         </span>
-        {r2On && pdfsInD1 > 0 && (
+        {r2On && pdfCount > 0 && (
           <span style="display:block; margin-top:8px;">
-            <button id="migrate-pdfs" class="btn secondary sm" type="button">Move PDFs to R2</button>
+            <button id="migrate-pdfs" class="btn secondary sm" type="button" data-total={pdfCount}>Move / organize PDFs by mailbox</button>
           </span>
         )}
       </span>
@@ -136,16 +138,16 @@ const WEEKDAYS = [
       if (btn) {
         btn.addEventListener('click', async function () {
           btn.disabled = true;
-          var total = 0;
+          var offset = 0, moved = 0;
           try {
             while (true) {
-              var res = await fetch('/api/migrate-pdfs', { method: 'POST' });
+              var res = await fetch('/api/migrate-pdfs', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ offset: offset }) });
               var data = await res.json();
               if (!res.ok || data.error) { status.textContent = data.error || ('Error ' + res.status); break; }
-              total += data.migrated || 0;
-              if (data.remaining > 0 && (data.migrated || 0) === 0) { status.textContent = 'Algunos PDFs no se pudieron mover (' + data.remaining + ' restantes).'; break; }
-              if (data.remaining > 0) { status.textContent = 'Moviendo… ' + data.remaining + ' restantes (' + total + ' movidos)'; }
-              else { status.textContent = 'Listo — ' + total + ' PDF(s) movidos a R2. ✓'; btn.style.display = 'none'; break; }
+              moved += data.moved || 0;
+              offset = data.offset;
+              if (data.done) { status.textContent = 'Listo — PDFs en R2 agrupados por buzón' + (moved ? ' (' + moved + ' movidos)' : '') + '. ✓'; btn.style.display = 'none'; break; }
+              status.textContent = 'Organizando… ' + Math.min(offset, data.total) + '/' + data.total + ' (' + moved + ' movidos)';
             }
           } catch (e) { status.textContent = 'Error: ' + (e && e.message ? e.message : e); }
           finally { btn.disabled = false; }

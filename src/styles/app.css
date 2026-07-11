@@ -137,6 +137,7 @@ tr:last-child td { border-bottom: none; }
 .banner.warn { background: var(--warn-bg); color: var(--warn); }
 
 form.inline { display: inline; }
+.row-actions { display: inline-flex; gap: 6px; align-items: center; justify-content: flex-end; flex-wrap: wrap; }
 
 .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
 
