@@ -27,6 +27,7 @@ import { dirname, join, isAbsolute } from 'node:path';
 import { ImapFlow } from 'imapflow';
 import { simpleParser } from 'mailparser';
 import { buildRecords, type OutRecord } from './core.ts';
+import { isDue, localDate } from '../src/lib/schedule.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -264,7 +265,33 @@ async function pool<T, R>(items: T[], n: number, worker: (item: T) => Promise<R>
   return results;
 }
 
+// Fetch the collection schedule so a cron run can decide whether today is due.
+async function fetchSchedule(): Promise<any | null> {
+  if (!APP_URL || !INGEST_TOKEN) return null;
+  try {
+    const res = await fetch(`${APP_URL}/api/collector/schedule`, {
+      headers: { authorization: `Bearer ${INGEST_TOKEN}` },
+    });
+    if (!res.ok) return null;
+    const body = (await res.json()) as { schedule?: any };
+    return body.schedule ?? null;
+  } catch {
+    return null;
+  }
+}
+
 async function main() {
+  // On scheduled (nightly cron) runs, honor the user's collection schedule; manual
+  // runs (Collect now / workflow_dispatch) always proceed. Fail open if we can't
+  // read the schedule, so collection never silently stops.
+  if (process.env.GITHUB_EVENT_NAME === 'schedule') {
+    const schedule = await fetchSchedule();
+    if (schedule && !isDue(schedule, localDate(Date.now()))) {
+      console.log(`Scheduled run skipped — not due today (schedule: ${schedule.frequency}).`);
+      return;
+    }
+  }
+
   const mailboxes = await loadMailboxes();
   if (mailboxes.length === 0) {
     console.log('No mailboxes configured. Add some in the app or in mailboxes.json.');

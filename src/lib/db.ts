@@ -1,6 +1,7 @@
 // D1 data-access layer: schema bootstrap + all queries for mailboxes and invoices.
 import type { ExtractedInvoice } from './invoice';
 import { encryptSecret, decryptSecret } from './crypto';
+import { normalizeSchedule, DEFAULT_SCHEDULE, type CollectionSchedule } from './schedule';
 
 // ---------------------------------------------------------------------------
 // Schema (mirrors migrations/0001_init.sql so the app also works if the user
@@ -292,6 +293,35 @@ export async function touchCollectionLock(db: D1Database, startedBy: string): Pr
 
 export async function releaseCollectionLock(db: D1Database): Promise<void> {
   await db.prepare(`DELETE FROM app_state WHERE key = ?`).bind(COLLECTION_KEY).run();
+}
+
+const SCHEDULE_KEY = 'collection_schedule';
+
+/** How often the nightly collector should actually run (default: every night). */
+export async function getCollectionSchedule(db: D1Database): Promise<CollectionSchedule> {
+  const row = await db
+    .prepare(`SELECT value FROM app_state WHERE key = ?`)
+    .bind(SCHEDULE_KEY)
+    .first<{ value: string | null }>();
+  if (!row?.value) return DEFAULT_SCHEDULE;
+  try {
+    return normalizeSchedule(JSON.parse(row.value));
+  } catch {
+    return DEFAULT_SCHEDULE;
+  }
+}
+
+export async function setCollectionSchedule(db: D1Database, raw: unknown): Promise<CollectionSchedule> {
+  const schedule = normalizeSchedule(raw);
+  const now = new Date().toISOString();
+  await db
+    .prepare(
+      `INSERT INTO app_state (key, value, updated_at) VALUES (?, ?, ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`
+    )
+    .bind(SCHEDULE_KEY, JSON.stringify(schedule), now)
+    .run();
+  return schedule;
 }
 
 // ---------------------------------------------------------------------------
