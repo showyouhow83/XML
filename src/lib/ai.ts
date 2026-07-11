@@ -11,8 +11,25 @@
 // guessing. The page always shows the SQL + rows so every number is auditable.
 import Anthropic from '@anthropic-ai/sdk';
 
-const MODEL = 'claude-opus-4-8';
-const THINKING: Anthropic.ThinkingConfigParam = { type: 'adaptive' };
+// Which model runs each of the three steps. Defaults to Opus everywhere (best
+// accuracy). Configurable so we can A/B a cheaper setup — e.g. cheap SQL-gen +
+// summary with an Opus review — via the ai-quiz harness or Worker env vars.
+export interface ModelConfig {
+  sql: string;
+  review: string;
+  summary: string;
+}
+export const DEFAULT_MODELS: ModelConfig = {
+  sql: 'claude-opus-4-8',
+  review: 'claude-opus-4-8',
+  summary: 'claude-opus-4-8',
+};
+
+// Adaptive extended thinking is available on Opus/Sonnet 4.6+ (and Fable/Mythos 5).
+// Older tiers (e.g. Haiku 4.5) reject `{type:'adaptive'}`, so omit thinking there.
+function thinkingFor(model: string): Anthropic.ThinkingConfigParam | undefined {
+  return /(opus-4-(6|7|8)|sonnet-(5|4-6)|fable-5|mythos-5)/.test(model) ? { type: 'adaptive' } : undefined;
+}
 
 // Described to the model so it can write correct SQL. Keep in sync with db.ts.
 const SCHEMA_DOC = `Table: invoices  (SQLite dialect — this is the ONLY table you may query)
@@ -183,12 +200,12 @@ function toolUseOf(res: Anthropic.Message, name: string): Anthropic.ToolUseBlock
 }
 
 // Second opinion: let Claude review the candidate SQL and correct genuine errors.
-async function reviewSql(client: Anthropic, question: string, sql: string): Promise<string> {
+async function reviewSql(client: Anthropic, question: string, sql: string, model: string): Promise<string> {
   try {
     const res = await client.messages.create({
-      model: MODEL,
+      model,
       max_tokens: 6000,
-      thinking: THINKING,
+      thinking: thinkingFor(model),
       system: REVIEW_SYSTEM,
       tools: [REVIEW_TOOL],
       tool_choice: { type: 'auto' },
@@ -210,12 +227,13 @@ async function summarize(
   client: Anthropic,
   question: string,
   sql: string,
-  rows: Record<string, unknown>[]
+  rows: Record<string, unknown>[],
+  model: string
 ): Promise<string> {
   const shown = rows.slice(0, MAX_SUMMARY_ROWS);
   const truncated = rows.length > MAX_SUMMARY_ROWS;
   const res = await client.messages.create({
-    model: MODEL,
+    model,
     max_tokens: 1500,
     system: SUMMARY_SYSTEM,
     messages: [
@@ -241,7 +259,8 @@ export async function askInvoices(
   db: D1Database,
   apiKey: string,
   question: string,
-  history: AskTurn[] = []
+  history: AskTurn[] = [],
+  models: ModelConfig = DEFAULT_MODELS
 ): Promise<AskResult> {
   const client = new Anthropic({ apiKey, maxRetries: 1 });
   const messages: Anthropic.MessageParam[] = [];
@@ -262,9 +281,9 @@ export async function askInvoices(
 
   for (let attempt = 0; attempt < 2; attempt++) {
     const gen = await client.messages.create({
-      model: MODEL,
+      model: models.sql,
       max_tokens: 6000,
-      thinking: THINKING,
+      thinking: thinkingFor(models.sql),
       system: SQL_SYSTEM,
       tools: [QUERY_TOOL],
       tool_choice: { type: 'auto' },
@@ -288,7 +307,7 @@ export async function askInvoices(
     }
 
     // Second-opinion review + correction of genuine errors.
-    const sql = await reviewSql(client, question, valid.sql);
+    const sql = await reviewSql(client, question, valid.sql, models.review);
 
     try {
       const { results } = await db.prepare(sql).all<Record<string, unknown>>();
@@ -311,7 +330,7 @@ export async function askInvoices(
         );
         continue;
       }
-      const answer = await summarize(client, question, sql, rows);
+      const answer = await summarize(client, question, sql, rows, models.summary);
       return { answer, sql, rows: rows.slice(0, MAX_SUMMARY_ROWS), rowCount: rows.length, truncated: rows.length > MAX_SUMMARY_ROWS };
     } catch (err) {
       lastError = (err as Error).message;

@@ -23,6 +23,11 @@ declare namespace Cloudflare {
     GITHUB_REPO?: string;
     // Optional: Anthropic API key powering the "Ask AI" natural-language query page.
     ANTHROPIC_API_KEY?: string;
+    // Optional per-step model overrides for Ask AI (default: Opus everywhere).
+    // Set these after A/B testing a cheaper setup with the ai-quiz harness.
+    AI_MODEL_SQL?: string;
+    AI_MODEL_REVIEW?: string;
+    AI_MODEL_SUMMARY?: string;
   }
 }
 

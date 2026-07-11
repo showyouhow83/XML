@@ -90,6 +90,9 @@ Worker (Cloudflare → `xml` → Settings → Variables and Secrets):
   "Collect now" button can trigger the workflow.
 - `ANTHROPIC_API_KEY` — Claude API key powering the **Ask AI** page (optional; the
   page shows a "not configured" notice until it's set).
+- `AI_MODEL_SQL` / `AI_MODEL_REVIEW` / `AI_MODEL_SUMMARY` — optional per-step model
+  overrides for Ivan (default: Opus everywhere). Set after A/B testing a cheaper
+  setup with `npm run ai-quiz`.
 
 GitHub repo → Settings → Secrets → Actions:
 - `APP_URL` = https://xml.showyouhow83.workers.dev
@@ -160,6 +163,8 @@ Later:
   Needs `.dev.vars` with the secrets; local D1 comes from wrangler.
 - Tests: `npm run test:extract`, `npm run test:collect` (extractor + XML↔PDF
   pairing, incl. a real Grupo ICE email layout).
+- Ivan model quiz: `ANTHROPIC_API_KEY=… npm run ai-quiz [-- opus hybrid sonnet haiku]`
+  — grades model configs on a synthetic invoice set with known answers.
 - Probe one mailbox, read-only: `IMAP_USER=… IMAP_PASS=… npm run probe`.
 - Typecheck: `npm run check`. Build: `npm run build`.
 - **Ship:** develop on branch `claude/financing-data-retrieval-ui-76hf9r` → PR →
@@ -168,6 +173,12 @@ Later:
 
 ## Changelog (newest first)
 
+- **#19** **Ivan model A/B + quiz** — Ivan's three steps (write SQL / review /
+  summarize) each take a configurable model (default Opus everywhere), overridable
+  via `AI_MODEL_SQL` / `AI_MODEL_REVIEW` / `AI_MODEL_SUMMARY` Worker vars. New
+  `npm run ai-quiz` grades configs (opus / hybrid / sonnet / haiku) against a
+  synthetic invoice set with known answers, so a cheaper setup can be proven
+  before switching Ivan. New: `scripts/ai-quiz.ts`.
 - **#18** **Editable collection schedule** — Settings now lets you choose how often
   the automatic collection runs: **daily / weekly / every 2 weeks / monthly on a
   day** (Costa Rica time). The nightly GitHub cron still fires each night, but the
