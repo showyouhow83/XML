@@ -1,7 +1,7 @@
 ---
 import { env } from 'cloudflare:workers';
 import Base from '../layouts/Base.astro';
-import { ensureSchema, listInvoices, filterOptions, overviewStats, groupByIssuer, type InvoiceFilters, type IssuerGroup } from '../lib/db';
+import { ensureSchema, listInvoices, filterOptions, overviewStats, groupByIssuer, getCollectionLock, type InvoiceFilters, type IssuerGroup, type CollectionLock } from '../lib/db';
 
 const url = Astro.url;
 const p = url.searchParams;
@@ -13,6 +13,7 @@ let data: Awaited<ReturnType<typeof listInvoices>> | null = null;
 let options = { accounts: [] as string[], docTypes: [] as string[], monedas: [] as string[], emisores: [] as { id: string; nombre: string; n: number }[] };
 let stats = { invoices: 0, withPdf: 0, mailboxes: 0 };
 let groups: IssuerGroup[] = [];
+let collectionLock: CollectionLock = { active: false, startedAt: null, startedBy: null };
 
 const filters: InvoiceFilters = {
   q: p.get('q') || undefined,
@@ -35,16 +36,29 @@ if (!env.DB) {
 } else {
   try {
     await ensureSchema(env.DB);
-    [data, options, stats, groups] = await Promise.all([
+    [data, options, stats, groups, collectionLock] = await Promise.all([
       listInvoices(env.DB, filters),
       filterOptions(env.DB),
       overviewStats(env.DB),
       view === 'issuers' ? groupByIssuer(env.DB, filters) : Promise.resolve([] as IssuerGroup[]),
+      getCollectionLock(env.DB),
     ]);
   } catch (err) {
     dbError = (err as Error).message;
   }
 }
+
+// Relative "started N min ago" for the running banner.
+function agoText(iso: string | null): string {
+  if (!iso) return '';
+  const secs = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 1000));
+  if (secs < 60) return 'just now';
+  const mins = Math.round(secs / 60);
+  if (mins < 60) return `${mins} min ago`;
+  const hrs = Math.round(mins / 60);
+  return `${hrs} h ago`;
+}
+const collecting = collectionLock.active;
 
 // --- helpers ---
 const money = (n: number | null, moneda: string | null) => {
@@ -91,7 +105,7 @@ const showingTo = Math.min(offset + limit, total);
     </div>
     <form method="post" action="/api/collect-now" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
       <label for="lookback" class="muted" style="font-size:12px;">First pull / re-scan</label>
-      <select id="lookback" name="lookback" style="min-width:auto;">
+      <select id="lookback" name="lookback" style="min-width:auto;" disabled={collecting}>
         <option value="30">30 days</option>
         <option value="90">3 months</option>
         <option value="180">6 months</option>
@@ -100,12 +114,18 @@ const showingTo = Math.min(offset + limit, total);
         <option value="1825">5 years</option>
       </select>
       <label class="muted" style="font-size:12px; display:flex; align-items:center; gap:4px;" title="Re-read everything in the window again, even invoices you already have. Use after we change how invoices are extracted. Normally leave off — runs only pull new mail.">
-        <input type="checkbox" name="full" value="1" style="min-width:auto; width:auto; padding:0; border:0; background:none;" /> re-scan all
+        <input type="checkbox" name="full" value="1" style="min-width:auto; width:auto; padding:0; border:0; background:none;" disabled={collecting} /> re-scan all
       </label>
-      <button class="btn" type="submit" title="Pull invoices from your mailboxes (only new mail unless 're-scan all' is checked)">⟳ Collect now</button>
+      <button class="btn" type="submit" disabled={collecting}
+        title={collecting ? 'A collection is already running — wait for it to finish' : "Pull invoices from your mailboxes (only new mail unless 're-scan all' is checked)"}
+        style={collecting ? 'opacity:.6; cursor:not-allowed;' : ''}>
+        {collecting ? '⟳ Collecting…' : '⟳ Collect now'}
+      </button>
     </form>
   </div>
 
+  {collecting && <div class="banner warn">⟳ A collection is running (started {agoText(collectionLock.startedAt)}). Only one runs at a time, so <strong>Collect now</strong> is disabled for everyone until it finishes. This page refreshes itself.</div>}
+  {collect === 'running' && !collecting && <div class="banner warn">A collection is already running — please wait for it to finish before starting another.</div>}
   {collect === 'queued' && <div class="banner ok">Collection started — it runs in the background, so you can leave this page. Watch progress on the <a href="/mailboxes">Mailboxes</a> page, or the <a href="https://github.com/showyouhow83/XML/actions/workflows/collect.yml" target="_blank" rel="noopener">live log</a>.</div>}
   {collect === 'notoken' && <div class="banner err">“Collect now” needs a GitHub token. Add the <code>GH_DISPATCH_TOKEN</code> secret to the Worker (see README), or run the collector from GitHub Actions.</div>}
   {collect === 'error' && <div class="banner err">Couldn’t start collection — check the <code>GH_DISPATCH_TOKEN</code> secret and that it has Actions read/write on the repo.</div>}
@@ -269,4 +289,6 @@ const showingTo = Math.min(offset + limit, total);
       </div>
     )
   )}
+
+  {collecting && <script is:inline>{`setTimeout(function(){ location.reload(); }, 10000);`}</script>}
 </Base>

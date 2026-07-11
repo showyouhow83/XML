@@ -63,6 +63,9 @@ in a Node "collector" on GitHub Actions (nightly cron + on-demand dispatch).
   otros_cargos / comprobante), source_account, message_uid, has_pdf, received_at,
   `detail_json`, created_at.
 - **attachments** — `clave` (PK), xml_content (raw XML), pdf_content (base64).
+- **app_state** — tiny key/value flags. Holds the **collection lock** (`collection_run`):
+  set while a collection is running so only one runs at a time across all clients;
+  released on finish, or auto-freed after a 60-min stale timeout.
 - `detail_json` holds line items, otros cargos, tax breakdown, and the
   `<Otros><OtroTexto codigo="…">` key/values (Periodo Facturado, etc.).
 
@@ -101,6 +104,10 @@ GitHub repo → Settings → Secrets → Actions:
   first pull it syncs **incrementally** — only new mail (by IMAP `UID`) — so
   nothing already stored is re-fetched; `clave` also guarantees no duplicates. A
   **“re-scan all”** toggle forces a full re-read.
+- **Only one collection runs at a time**, globally: while a run is in progress the
+  **Collect now** button is disabled on every client (shared D1 lock), and the
+  GitHub Actions workflow has a `concurrency` group so a second trigger queues
+  instead of running concurrently — no racing, no double-pulling.
 - **Ask AI** page: ask in plain language → Claude writes a read-only SQL query
   over `invoices`, runs it on D1, and explains the answer (shows the SQL + rows).
   Needs the `ANTHROPIC_API_KEY` secret.
@@ -144,6 +151,12 @@ Later:
 
 ## Changelog (newest first)
 
+- **#15** **Single-run collection lock** — only one collection can run at a time
+  across all clients. A shared D1 lock (`app_state.collection_run`) disables the
+  **Collect now** button everywhere while a run is in progress (auto-freed after a
+  60-min stale timeout), the collector reports start/heartbeat/finish
+  (`/api/collector/run`), and the workflow gains a `concurrency` group so a second
+  trigger queues instead of double-running.
 - **#14** **Incremental collection** — the collector now remembers the highest
   IMAP `UID` pulled per mailbox (`last_uid` + `uidvalidity`) and, after the first
   sync, fetches only newer messages. No re-downloading or re-writing of invoices
@@ -154,6 +167,9 @@ Later:
   (`claude-opus-4-8`) writes a read-only `SELECT` (validated: single statement,
   `invoices` table only, no writes/creds/blobs), runs it on D1, and summarizes
   the rows. New: `src/lib/ai.ts`, `/api/ask`, `/ask`. Needs `ANTHROPIC_API_KEY`.
+  Later refined: answers render real Markdown **tables**, the page is **multi-turn**
+  (follow-ups keep context via a `history` param), and a smarter default treats a
+  named cédula as the **vendor** (with an auto-retry of the other role on 0 rows).
 - **#12** Faster nightly sync (30-day rolling window) + per-mailbox "covers back
   to <date>" signal (`synced_from`).
 - **#10** Collect date picker (how-far-back) + live per-mailbox status/progress.

@@ -15,6 +15,13 @@ on:
         required: false
         default: '0'
 
+# Only one collection runs at a time, ever. A second trigger (from another
+# browser, or the nightly cron overlapping a manual run) queues behind the
+# running one instead of running concurrently — no racing, no double-pulling.
+concurrency:
+  group: collect-invoices
+  cancel-in-progress: false
+
 jobs:
   collect:
     runs-on: ubuntu-latest
