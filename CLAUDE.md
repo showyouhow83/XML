@@ -178,7 +178,9 @@ Later:
   via `AI_MODEL_SQL` / `AI_MODEL_REVIEW` / `AI_MODEL_SUMMARY` Worker vars. New
   `npm run ai-quiz` grades configs (opus / hybrid / sonnet / haiku) against a
   synthetic invoice set with known answers, so a cheaper setup can be proven
-  before switching Ivan. New: `scripts/ai-quiz.ts`.
+  before switching Ivan — runnable locally or from the **Ivan model quiz** GitHub
+  Action (needs an `ANTHROPIC_API_KEY` repo secret). New: `scripts/ai-quiz.ts`,
+  `.github/workflows/ai-quiz.yml`.
 - **#18** **Editable collection schedule** — Settings now lets you choose how often
   the automatic collection runs: **daily / weekly / every 2 weeks / monthly on a
   day** (Costa Rica time). The nightly GitHub cron still fires each night, but the

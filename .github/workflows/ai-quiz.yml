@@ -1,0 +1,33 @@
+name: Ivan model quiz
+
+# Run the accuracy quiz from the Actions tab (no local terminal needed): grades
+# model configs on a synthetic invoice set with known answers, prints the scores
+# in the run log. Needs an ANTHROPIC_API_KEY repo secret (spends API tokens).
+on:
+  workflow_dispatch:
+    inputs:
+      configs:
+        description: 'Configs to test (space-separated: opus hybrid sonnet haiku)'
+        required: false
+        default: 'opus hybrid'
+
+jobs:
+  quiz:
+    runs-on: ubuntu-latest
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - name: Check for API key
+        if: env.ANTHROPIC_API_KEY == ''
+        run: |
+          echo "::error::Add an ANTHROPIC_API_KEY secret (repo → Settings → Secrets and variables → Actions) to run the quiz."
+          exit 1
+      - name: Run quiz
+        env:
+          CONFIGS: ${{ github.event.inputs.configs }}
+        run: npm run ai-quiz -- $CONFIGS
