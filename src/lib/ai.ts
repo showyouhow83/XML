@@ -57,6 +57,12 @@ Rules that MUST be followed to avoid wrong numbers:
     received it. "proveedor/vendor/supplier/de quién compré" → group/filter by emisor. "cliente" → receptor.
   - DATES are TEXT ISO strings: a month is substr(fecha_emision,1,7)='2025-06'; a year is
     substr(fecha_emision,1,4)='2025'; a range uses fecha_emision >= '2025-01-01' AND fecha_emision < '2025-04-01'.
+  - WHOSE INVOICES: these are documents your client RECEIVED (bought), so the receptor is your client's own
+    cédula (usually just one or a few) and the emisor is the outside vendor. So when the user names a cédula or
+    company and asks how much was "spent" / "gastos" / "paid" / "cost", they almost always mean a VENDOR — filter
+    by emisor_id (or emisor_nombre). Treat a named cédula as the receptor ONLY if they explicitly say "my
+    company", "buyer", "client", or "receptor". If filtering by one role returns no rows, the entity is probably
+    the other role — switch emisor_id <-> receptor_id and try again.
   - Prefer aggregates (SUM, COUNT, AVG, GROUP BY) so results are compact and checkable.
   - Match names case-insensitively, e.g. emisor_nombre LIKE '%liberty%'.`;
 
@@ -65,6 +71,8 @@ const SQL_SYSTEM = `You translate a question about an invoice database into ONE 
 ${SCHEMA_DOC}
 
 Think step by step before answering: which entity (emisor vs receptor), how to keep currencies separate, the exact date filter, and the right aggregate. Produce ONE SELECT (or WITH … SELECT) over the invoices table only — never write or touch any other table.
+
+Earlier turns in this conversation are context — resolve references like "that vendor", "the first one", "just INS", or a bare cédula the user pulled from a previous answer against them (e.g. a cédula shown as an issuer in the last table is an emisor).
 
 If the question is genuinely ambiguous or asks for something the schema can't answer, DO NOT guess: reply with a short clarifying question in plain text instead of calling the tool. Otherwise, always call query_invoices with your final SQL.`;
 
@@ -77,6 +85,7 @@ Scrutinize especially: emisor (vendor) vs receptor (client) mix-ups; summing acr
 const SUMMARY_SYSTEM = `You answer the user's question using the SQL result rows provided.
 
 - Be concise and direct; lead with the number or fact they asked for.
+- When the result is a breakdown or list of several rows, present it as a compact **Markdown table** with a clear header row (the UI renders it), and give the headline total in a sentence next to it. For a single number, just state it.
 - Monetary amounts are in each row's \`moneda\` (CRC = Costa Rican colones, USD = US dollars). Always state the currency and keep CRC and USD totals separate. Format large numbers readably (e.g. ₡1,234,567.89 or $1,234.56).
 - iva_rate values are percentages (13 = 13%).
 - End with a one-line "Assumptions:" note stating how you read the question (date range interpreted, vendor vs client, currency handling) so the user can catch a misread.
@@ -117,6 +126,13 @@ export interface AskResult {
   truncated: boolean;
   clarify?: boolean; // true when the model asked for clarification instead of answering
   error?: string;
+}
+
+// A prior exchange, passed back so follow-up questions have context.
+export interface AskTurn {
+  question: string;
+  sql?: string | null;
+  answer?: string;
 }
 
 type Validation = { ok: true; sql: string } | { ok: false; error: string };
@@ -220,9 +236,26 @@ async function summarize(
  * Generates SQL (with reasoning), reviews it, runs it (one self-repair on a DB
  * error), then summarizes. Returns the answer plus the SQL and rows for display.
  */
-export async function askInvoices(db: D1Database, apiKey: string, question: string): Promise<AskResult> {
+export async function askInvoices(
+  db: D1Database,
+  apiKey: string,
+  question: string,
+  history: AskTurn[] = []
+): Promise<AskResult> {
   const client = new Anthropic({ apiKey, maxRetries: 1 });
-  const messages: Anthropic.MessageParam[] = [{ role: 'user', content: question }];
+  const messages: Anthropic.MessageParam[] = [];
+  // Seed prior turns so follow-ups ("that vendor", "just INS", a cédula from the
+  // last table) resolve. Keep it compact: the question + how it was answered.
+  for (const h of history.slice(-6)) {
+    if (!h?.question) continue;
+    messages.push({ role: 'user', content: String(h.question).slice(0, 500) });
+    const note =
+      [h.sql ? `I queried: ${h.sql}` : null, h.answer ? `I answered: ${String(h.answer).slice(0, 600)}` : null]
+        .filter(Boolean)
+        .join('\n') || '(answered)';
+    messages.push({ role: 'assistant', content: note });
+  }
+  messages.push({ role: 'user', content: question });
   const empty = { sql: null, rows: [], rowCount: 0, truncated: false };
   let lastError = '';
 
@@ -259,6 +292,24 @@ export async function askInvoices(db: D1Database, apiKey: string, question: stri
     try {
       const { results } = await db.prepare(sql).all<Record<string, unknown>>();
       const rows = results ?? [];
+      // Zero rows on the first try often means the entity was filtered under the
+      // wrong role (emisor vs receptor) — let the model reconsider once.
+      if (rows.length === 0 && attempt === 0) {
+        messages.push(
+          { role: 'assistant', content: gen.content },
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'tool_result',
+                tool_use_id: genTool.id,
+                content: `The query I ran was:\n${sql}\nIt returned 0 rows. If you filtered by a cédula or company name, it may be the OTHER party (try swapping emisor_id <-> receptor_id) or the filter is too strict — reconsider and try again. If you are confident there is genuinely no matching data, run the same query again to confirm.`,
+              },
+            ],
+          }
+        );
+        continue;
+      }
       const answer = await summarize(client, question, sql, rows);
       return { answer, sql, rows: rows.slice(0, MAX_SUMMARY_ROWS), rowCount: rows.length, truncated: rows.length > MAX_SUMMARY_ROWS };
     } catch (err) {
