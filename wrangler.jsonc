@@ -19,7 +19,16 @@
   ],
   // Object storage for invoice PDFs (raw bytes) so they don't bloat D1.
   // Create the bucket first: `npx wrangler r2 bucket create xml-pdfs`.
-  "r2_buckets": [{ "binding": "PDFS", "bucket_name": "xml-pdfs" }]
+  "r2_buckets": [{ "binding": "PDFS", "bucket_name": "xml-pdfs" }],
+  // Which model runs each of Ivan's steps. Sonnet scored 18/18 on the quiz (=Opus)
+  // at ~half the cost, so we run it here. Model names aren't secret, so they live
+  // in config (deploys automatically). Change a value to switch a step; delete a
+  // key to fall back to Opus for that step.
+  "vars": {
+    "AI_MODEL_SQL": "claude-sonnet-5",
+    "AI_MODEL_REVIEW": "claude-sonnet-5",
+    "AI_MODEL_SUMMARY": "claude-sonnet-5"
+  }
   // The Astro Cloudflare adapter injects the Worker entry + static assets at
   // build time, so `main`/`assets` are intentionally omitted here.
   //

@@ -90,9 +90,10 @@ Worker (Cloudflare → `xml` → Settings → Variables and Secrets):
   "Collect now" button can trigger the workflow.
 - `ANTHROPIC_API_KEY` — Claude API key powering the **Ask AI** page (optional; the
   page shows a "not configured" notice until it's set).
-- `AI_MODEL_SQL` / `AI_MODEL_REVIEW` / `AI_MODEL_SUMMARY` — optional per-step model
-  overrides for Ivan (default: Opus everywhere). Set after A/B testing a cheaper
-  setup with `npm run ai-quiz`.
+- `AI_MODEL_SQL` / `AI_MODEL_REVIEW` / `AI_MODEL_SUMMARY` — per-step model for Ivan.
+  Set to `claude-sonnet-5` in `wrangler.jsonc` **vars** (proven ==Opus at ~½ cost
+  by the quiz), so they deploy from the repo — no dashboard step. Delete a key to
+  fall back to Opus for that step; the code default is Opus.
 
 GitHub repo → Settings → Secrets → Actions:
 - `APP_URL` = https://xml.showyouhow83.workers.dev
@@ -173,6 +174,12 @@ Later:
 
 ## Changelog (newest first)
 
+- **#20** **Ivan runs on Sonnet** — the quiz showed **sonnet, hybrid and opus all
+  18/18** (haiku 17 + 1 clarify, 0 wrong), so Ivan's three steps now default to
+  `claude-sonnet-5` via `wrangler.jsonc` vars (≈½ the Opus cost, no dashboard
+  step; deletes → Opus). Also: the quiz grader now scores **clarify vs wrong**
+  separately (a clarification is a safe non-answer), and a prompt nudge stops Ivan
+  asking vendor-vs-client on Spanish spend questions ("¿cuánto gasté con X?").
 - **#19** **Ivan model A/B + quiz** — Ivan's three steps (write SQL / review /
   summarize) each take a configurable model (default Opus everywhere), overridable
   via `AI_MODEL_SQL` / `AI_MODEL_REVIEW` / `AI_MODEL_SUMMARY` Worker vars. New

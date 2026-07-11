@@ -155,33 +155,49 @@ async function main() {
   const configs = asked.length ? asked : ['opus', 'hybrid'];
   console.log(`Quiz: ${QUESTIONS.length} questions × ${configs.length} config(s) [${configs.join(', ')}]\n`);
 
-  const summary: Record<string, number> = {};
+  // A clarification (Ivan asks vendor-vs-client instead of answering) is a SAFE
+  // non-answer, not a wrong answer — so we bucket correct / clarified / wrong.
+  const summary: Record<string, { correct: number; clarified: number; wrong: number }> = {};
   for (const name of configs) {
     const models = CONFIGS[name];
     console.log(`\n=== ${name.toUpperCase()}  (sql=${models.sql}, review=${models.review}, summary=${models.summary}) ===`);
     const db = d1(seedDb());
-    let pass = 0;
+    let correct = 0, clarified = 0, wrong = 0;
     for (const Q of QUESTIONS) {
       try {
         const r = await askInvoices(db, KEY!, Q.q, [], models);
+        if (r.clarify) {
+          clarified++;
+          console.log(`~ ${Q.q}  (asked to clarify — not wrong)`);
+          continue;
+        }
         const cands = extractNums(r.answer, r.rows as any[]);
         const numsOk = Q.nums.every((e) => near(cands, e));
         const hay = (String(r.answer) + ' ' + JSON.stringify(r.rows)).toLowerCase();
         const contOk = (Q.contains || []).every((s) => hay.includes(s));
-        const ok = !r.error && numsOk && contOk;
-        if (ok) pass++;
-        console.log(`${ok ? '✓' : '✗'} ${Q.q}`);
-        if (!ok) console.log(`    want ${JSON.stringify(Q.nums)}${Q.contains ? ' + ' + JSON.stringify(Q.contains) : ''} | sql: ${r.sql ?? r.error} | got: ${(r.answer || '').replace(/\n/g, ' ').slice(0, 140)}`);
+        if (!r.error && numsOk && contOk) {
+          correct++;
+          console.log(`✓ ${Q.q}`);
+        } else {
+          wrong++;
+          console.log(`✗ ${Q.q}`);
+          console.log(`    want ${JSON.stringify(Q.nums)}${Q.contains ? ' + ' + JSON.stringify(Q.contains) : ''} | sql: ${r.sql ?? r.error} | got: ${(r.answer || '').replace(/\n/g, ' ').slice(0, 140)}`);
+        }
       } catch (e) {
+        wrong++;
         console.log(`✗ ${Q.q}  — ERROR ${(e as Error).message}`);
       }
     }
-    summary[name] = pass;
-    console.log(`→ ${name}: ${pass}/${QUESTIONS.length} correct`);
+    summary[name] = { correct, clarified, wrong };
+    console.log(`→ ${name}: ${correct} correct · ${clarified} clarified · ${wrong} wrong  (of ${QUESTIONS.length})`);
   }
 
-  console.log('\n===== SUMMARY =====');
-  for (const name of configs) console.log(`${name.padEnd(8)} ${summary[name]}/${QUESTIONS.length}`);
+  console.log('\n===== SUMMARY (correct · clarified · wrong) =====');
+  for (const name of configs) {
+    const s = summary[name];
+    console.log(`${name.padEnd(8)} ${s.correct} correct · ${s.clarified} clarified · ${s.wrong} wrong`);
+  }
+  console.log('\n(what matters most: "wrong" = an actually incorrect number. clarified = safely asked instead of guessing.)');
 }
 
 main().catch((e) => { console.error(e); process.exit(1); });
