@@ -70,7 +70,9 @@ in a Node "collector" on GitHub Actions (nightly cron + on-demand dispatch).
   not-yet-migrated PDFs).
 - **app_state** — tiny key/value flags. Holds the **collection lock** (`collection_run`):
   set while a collection is running so only one runs at a time across all clients;
-  released on finish, or auto-freed after a 60-min stale timeout.
+  released on finish, or auto-freed after a 60-min stale timeout. Also holds the
+  **collection schedule** (`collection_schedule`): how often the nightly run
+  actually collects (daily / weekly / biweekly / monthly-on-day).
 - `detail_json` holds line items, otros cargos, tax breakdown, and the
   `<Otros><OtroTexto codigo="…">` key/values (Periodo Facturado, etc.).
 
@@ -113,6 +115,10 @@ GitHub repo → Settings → Secrets → Actions:
   **Collect now** button is disabled on every client (shared D1 lock), and the
   GitHub Actions workflow has a `concurrency` group so a second trigger queues
   instead of running concurrently — no racing, no double-pulling.
+- **Editable collection schedule** (Settings): the nightly cron fires every night,
+  but the collector only actually runs when the chosen schedule is due — **daily /
+  weekly / every 2 weeks / monthly on a chosen day** (Costa Rica time). Manual
+  **Collect now** always runs regardless.
 - **Ivan** — a floating **Ask AI chat** (bottom-right on every page): ask in plain
   Spanish/English → Claude writes a read-only SQL query over `invoices`, runs it
   on D1, and explains the answer in your language (renders tables; shows SQL +
@@ -162,6 +168,12 @@ Later:
 
 ## Changelog (newest first)
 
+- **#18** **Editable collection schedule** — Settings now lets you choose how often
+  the automatic collection runs: **daily / weekly / every 2 weeks / monthly on a
+  day** (Costa Rica time). The nightly GitHub cron still fires each night, but the
+  collector reads the schedule (`app_state.collection_schedule`, served via
+  `/api/collector/schedule`) and only runs when today is due; **Collect now**
+  always runs. New: `src/lib/schedule.ts` (shared pure logic), `/api/schedule`.
 - **#17** **PDFs in R2** — invoice PDFs now live in an R2 bucket (`xml-pdfs`,
   binding `PDFS`) as raw bytes instead of base64 in D1: ingest uploads to R2,
   `/api/download` serves from R2 (falling back to any base64 still in D1), and a
