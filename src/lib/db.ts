@@ -324,6 +324,34 @@ export async function setCollectionSchedule(db: D1Database, raw: unknown): Promi
   return schedule;
 }
 
+const AI_MODEL_KEY = 'ai_model';
+
+/** In-app override for which model Ivan uses (applied to all 3 steps). null → use
+ *  the deployment defaults (AI_MODEL_* env vars, else the code default). */
+export async function getAiModel(db: D1Database): Promise<string | null> {
+  const row = await db
+    .prepare(`SELECT value FROM app_state WHERE key = ?`)
+    .bind(AI_MODEL_KEY)
+    .first<{ value: string | null }>();
+  return row?.value ?? null;
+}
+
+/** Set (or clear, with null) Ivan's model override. Caller validates the id. */
+export async function setAiModel(db: D1Database, model: string | null): Promise<void> {
+  if (!model) {
+    await db.prepare(`DELETE FROM app_state WHERE key = ?`).bind(AI_MODEL_KEY).run();
+    return;
+  }
+  const now = new Date().toISOString();
+  await db
+    .prepare(
+      `INSERT INTO app_state (key, value, updated_at) VALUES (?, ?, ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`
+    )
+    .bind(AI_MODEL_KEY, model, now)
+    .run();
+}
+
 // ---------------------------------------------------------------------------
 // Invoices
 // ---------------------------------------------------------------------------

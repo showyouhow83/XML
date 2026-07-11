@@ -75,7 +75,9 @@ in a Node "collector" on GitHub Actions (nightly cron + on-demand dispatch).
   set while a collection is running so only one runs at a time across all clients;
   released on finish, or auto-freed after a 60-min stale timeout. Also holds the
   **collection schedule** (`collection_schedule`): how often the nightly run
-  actually collects (daily / weekly / biweekly / monthly-on-day).
+  actually collects (daily / weekly / biweekly / monthly-on-day). And **Ivan's
+  model** (`ai_model`): the in-app override for which Claude model powers Ask AI
+  (applies to all 3 steps; unset → the `AI_MODEL_*` deploy defaults).
 - `detail_json` holds line items, otros cargos, tax breakdown, and the
   `<Otros><OtroTexto codigo="…">` key/values (Periodo Facturado, etc.).
 
@@ -179,6 +181,18 @@ Later:
 
 ## Changelog (newest first)
 
+- **#25** **Ivan gets its own AI page + in-app model picker** — the **Ivan · Ask AI**
+  card now opens a dedicated **`/ai`** page (breadcrumb `Settings › Ivan · AI`), like
+  Mailboxes and Collection. There you pick which **Claude** model powers Ivan —
+  **Haiku 4.5 / Sonnet 5 (default) / Opus 4.8 / Fable 5**, or “Deployment default” —
+  so you can bump to a stronger model when you want. The choice persists in
+  `app_state.ai_model` and applies to all 3 Ivan steps, overriding the `AI_MODEL_*`
+  deploy vars; the Settings card summarizes the effective model. New: `src/pages/ai.astro`,
+  `/api/ai-model`, `getAiModel`/`setAiModel`, and `AI_MODEL_CHOICES`/`isValidAiModel`/
+  `aiModelLabel` in `ai.ts`. **Gemini/GPT are intentionally not wired** — each would
+  need its own API key **and** a pass through the `ai-quiz` accuracy harness before it
+  touches the financial data; the page says so. Verified against a running dev server
+  (14/14 across two runs).
 - **#24** **Collection gets its own page under Settings** — the collection
   **schedule** editor moved off the Settings page onto a dedicated **`/collection`**
   page (breadcrumb `Settings › Collection`), so the **Collection** card now opens
