@@ -1,0 +1,51 @@
+---
+import { env } from 'cloudflare:workers';
+import Base from '../layouts/Base.astro';
+import { ensureSchema, listMailboxes } from '../lib/db';
+
+let mailboxCount = 0;
+let dbError: string | null = null;
+if (env.DB) {
+  try {
+    await ensureSchema(env.DB);
+    mailboxCount = (await listMailboxes(env.DB)).length;
+  } catch (err) {
+    dbError = (err as Error).message;
+  }
+}
+const aiOn = Boolean(env.ANTHROPIC_API_KEY);
+const collectOn = Boolean(env.GH_DISPATCH_TOKEN);
+---
+
+<Base title="Settings · Financing Inbox" active="settings">
+  <h1>Settings</h1>
+  <p class="sub">Manage how the app connects, collects, and answers.</p>
+
+  {dbError && <div class="banner err">{dbError}</div>}
+
+  <div class="settings-grid">
+    <a class="setting-card" href="/mailboxes">
+      <span class="setting-ic">📥</span>
+      <span>
+        <strong>Client mailboxes</strong>
+        <span class="muted">IMAP accounts the collector reads invoices from · {mailboxCount} configured →</span>
+      </span>
+    </a>
+
+    <div class="setting-card">
+      <span class="setting-ic">🤖</span>
+      <span>
+        <strong>Ivan · Ask AI</strong>
+        <span class="muted">{aiOn ? 'Active — tap 💬 Ivan (bottom-right) on any page to chat.' : 'Not configured — add the ANTHROPIC_API_KEY secret to the Worker.'}</span>
+      </span>
+    </div>
+
+    <div class="setting-card">
+      <span class="setting-ic">⟳</span>
+      <span>
+        <strong>Collection</strong>
+        <span class="muted">{collectOn ? '“Collect now” is enabled (one run at a time).' : 'Add GH_DISPATCH_TOKEN to enable “Collect now”.'} Nightly at 06:00 UTC.</span>
+      </span>
+    </div>
+  </div>
+</Base>

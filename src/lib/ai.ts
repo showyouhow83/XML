@@ -74,7 +74,7 @@ Think step by step before answering: which entity (emisor vs receptor), how to k
 
 Earlier turns in this conversation are context — resolve references like "that vendor", "the first one", "just INS", or a bare cédula the user pulled from a previous answer against them (e.g. a cédula shown as an issuer in the last table is an emisor).
 
-If the question is genuinely ambiguous or asks for something the schema can't answer, DO NOT guess: reply with a short clarifying question in plain text instead of calling the tool. Otherwise, always call query_invoices with your final SQL.`;
+If the question is genuinely ambiguous or asks for something the schema can't answer, DO NOT guess: reply with a short clarifying question in plain text (in the user's own language) instead of calling the tool. Otherwise, always call query_invoices with your final SQL.`;
 
 const REVIEW_SYSTEM = `You are a meticulous reviewer checking a SQLite SELECT before it runs against a Costa Rican invoice database used for tax/accounting. Given the schema, the user's question, and a candidate query, decide whether it correctly and completely answers the question.
 
@@ -84,6 +84,7 @@ Scrutinize especially: emisor (vendor) vs receptor (client) mix-ups; summing acr
 
 const SUMMARY_SYSTEM = `You answer the user's question using the SQL result rows provided.
 
+- Reply in the SAME LANGUAGE as the user's question: if they ask in Spanish, answer in Spanish (Costa Rican Spanish is natural here); if in English, answer in English. Use that language for the table headers too.
 - Be concise and direct; lead with the number or fact they asked for.
 - When the result is a breakdown or list of several rows, present it as a compact **Markdown table** with a clear header row (the UI renders it), and give the headline total in a sentence next to it. For a single number, just state it.
 - Monetary amounts are in each row's \`moneda\` (CRC = Costa Rican colones, USD = US dollars). Always state the currency and keep CRC and USD totals separate. Format large numbers readably (e.g. ₡1,234,567.89 or $1,234.56).
