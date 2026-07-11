@@ -6,7 +6,6 @@ import { hasLegacyPdfObjects } from '../lib/pdfs';
 import { describeSchedule, DEFAULT_SCHEDULE, type CollectionSchedule } from '../lib/schedule';
 
 const aiOn = Boolean(env.ANTHROPIC_API_KEY);
-const collectOn = Boolean(env.GH_DISPATCH_TOKEN);
 const r2On = Boolean(env.PDFS);
 
 let mailboxCount = 0;
@@ -34,12 +33,6 @@ if (env.DB) {
 // everything is foldered, both are zero and the button goes away (new invoices
 // are already stored foldered by ingest, so they never re-trigger it).
 const needsOrganize = r2On && (pdfsInD1 > 0 || legacyPdfs);
-const saved = Astro.url.searchParams.get('saved');
-
-const WEEKDAYS = [
-  { v: 1, n: 'Monday' }, { v: 2, n: 'Tuesday' }, { v: 3, n: 'Wednesday' }, { v: 4, n: 'Thursday' },
-  { v: 5, n: 'Friday' }, { v: 6, n: 'Saturday' }, { v: 0, n: 'Sunday' },
-];
 ---
 
 <Base title="Settings · Financing Inbox" active="settings">
@@ -47,7 +40,6 @@ const WEEKDAYS = [
   <p class="sub">Manage how the app connects, collects, answers, and stores.</p>
 
   {dbError && <div class="banner err">{dbError}</div>}
-  {saved === 'schedule' && <div class="banner ok">Schedule saved.</div>}
 
   <div class="settings-grid">
     <a class="setting-card" href="/mailboxes">
@@ -66,11 +58,11 @@ const WEEKDAYS = [
       </span>
     </div>
 
-    <a class="setting-card" href="#collection-schedule">
+    <a class="setting-card" href="/collection">
       <span class="setting-ic">⟳</span>
       <span>
         <strong>Collection</strong>
-        <span class="muted">{collectOn ? '“Collect now” is enabled (one run at a time).' : 'Add GH_DISPATCH_TOKEN to enable “Collect now”.'} Auto‑runs: <strong>{describeSchedule(schedule)}</strong> · edit schedule →</span>
+        <span class="muted">Automatic collection schedule · runs <strong>{describeSchedule(schedule)}</strong> →</span>
       </span>
     </a>
 
@@ -96,54 +88,8 @@ const WEEKDAYS = [
     </div>
   </div>
 
-  <section class="panel" id="collection-schedule" style="margin-top:20px; scroll-margin-top:16px;">
-    <h2>Collection schedule</h2>
-    <p class="muted" style="margin-top:0;">
-      How often the <strong>automatic</strong> collection runs. <strong>Collect now</strong> always works regardless of this.
-      Runs just after midnight Costa Rica time. Current: <strong>{describeSchedule(schedule)}</strong>.
-    </p>
-    <form method="post" action="/api/schedule" style="display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap;">
-      <div class="field">
-        <label for="frequency">Frequency</label>
-        <select id="frequency" name="frequency">
-          <option value="daily" selected={schedule.frequency === 'daily'}>Every night</option>
-          <option value="weekly" selected={schedule.frequency === 'weekly'}>Weekly</option>
-          <option value="biweekly" selected={schedule.frequency === 'biweekly'}>Every 2 weeks</option>
-          <option value="monthly" selected={schedule.frequency === 'monthly'}>Monthly</option>
-        </select>
-      </div>
-      <div class="field" id="dow-field">
-        <label for="dayOfWeek">Day of week</label>
-        <select id="dayOfWeek" name="dayOfWeek">
-          {WEEKDAYS.map((d) => <option value={d.v} selected={(schedule.dayOfWeek ?? 1) === d.v}>{d.n}</option>)}
-        </select>
-      </div>
-      <div class="field" id="dom-field">
-        <label for="dayOfMonth">Day of month</label>
-        <input id="dayOfMonth" name="dayOfMonth" type="number" min="1" max="31" value={schedule.dayOfMonth ?? 1} />
-      </div>
-      <button class="btn" type="submit">Save schedule</button>
-    </form>
-    <p class="muted" style="margin-bottom:0; font-size:12px;">
-      For a specific day each month, pick <em>Monthly</em> and set the day (e.g. 5 = the 5th; a day past a short month falls on its last day).
-    </p>
-  </section>
-
   <script is:inline>
     (function () {
-      var f = document.getElementById('frequency');
-      var dow = document.getElementById('dow-field');
-      var dom = document.getElementById('dom-field');
-      if (f && dow && dom) {
-        var sync = function () {
-          var v = f.value;
-          dow.style.display = v === 'weekly' || v === 'biweekly' ? '' : 'none';
-          dom.style.display = v === 'monthly' ? '' : 'none';
-        };
-        f.addEventListener('change', sync);
-        sync();
-      }
-
       var btn = document.getElementById('migrate-pdfs');
       var status = document.getElementById('pdf-status');
       if (btn) {

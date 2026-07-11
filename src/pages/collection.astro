@@ -1,0 +1,95 @@
+---
+import { env } from 'cloudflare:workers';
+import Base from '../layouts/Base.astro';
+import { ensureSchema, getCollectionSchedule } from '../lib/db';
+import { describeSchedule, DEFAULT_SCHEDULE, type CollectionSchedule } from '../lib/schedule';
+
+let schedule: CollectionSchedule = DEFAULT_SCHEDULE;
+let dbError: string | null = null;
+if (env.DB) {
+  try {
+    await ensureSchema(env.DB);
+    schedule = await getCollectionSchedule(env.DB);
+  } catch (err) {
+    dbError = (err as Error).message;
+  }
+}
+const collectOn = Boolean(env.GH_DISPATCH_TOKEN);
+const saved = Astro.url.searchParams.get('saved');
+
+const WEEKDAYS = [
+  { v: 1, n: 'Monday' }, { v: 2, n: 'Tuesday' }, { v: 3, n: 'Wednesday' }, { v: 4, n: 'Thursday' },
+  { v: 5, n: 'Friday' }, { v: 6, n: 'Saturday' }, { v: 0, n: 'Sunday' },
+];
+---
+
+<Base title="Collection · Financing Inbox" active="settings">
+  <p class="crumb"><a href="/settings">Settings</a> › Collection</p>
+  <h1>Collection</h1>
+  <p class="sub">How often the app automatically pulls invoices from your client mailboxes.</p>
+
+  {dbError && <div class="banner err">{dbError}</div>}
+  {saved === 'schedule' && <div class="banner ok">Schedule saved.</div>}
+
+  <section class="panel">
+    <h2>Collection schedule</h2>
+    <p class="muted" style="margin-top:0;">
+      How often the <strong>automatic</strong> collection runs. <strong>Collect now</strong> (on the dashboard) always works
+      regardless of this. Runs just after midnight Costa Rica time. Current: <strong>{describeSchedule(schedule)}</strong>.
+    </p>
+    <form method="post" action="/api/schedule" style="display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap;">
+      <div class="field">
+        <label for="frequency">Frequency</label>
+        <select id="frequency" name="frequency">
+          <option value="daily" selected={schedule.frequency === 'daily'}>Every night</option>
+          <option value="weekly" selected={schedule.frequency === 'weekly'}>Weekly</option>
+          <option value="biweekly" selected={schedule.frequency === 'biweekly'}>Every 2 weeks</option>
+          <option value="monthly" selected={schedule.frequency === 'monthly'}>Monthly</option>
+        </select>
+      </div>
+      <div class="field" id="dow-field">
+        <label for="dayOfWeek">Day of week</label>
+        <select id="dayOfWeek" name="dayOfWeek">
+          {WEEKDAYS.map((d) => <option value={d.v} selected={(schedule.dayOfWeek ?? 1) === d.v}>{d.n}</option>)}
+        </select>
+      </div>
+      <div class="field" id="dom-field">
+        <label for="dayOfMonth">Day of month</label>
+        <input id="dayOfMonth" name="dayOfMonth" type="number" min="1" max="31" value={schedule.dayOfMonth ?? 1} />
+      </div>
+      <button class="btn" type="submit">Save schedule</button>
+    </form>
+    <p class="muted" style="margin-bottom:0; font-size:12px;">
+      For a specific day each month, pick <em>Monthly</em> and set the day (e.g. 5 = the 5th; a day past a short month falls on its last day).
+    </p>
+  </section>
+
+  <section class="panel" style="margin-top:20px;">
+    <h2>How collection runs</h2>
+    <p class="muted" style="margin-top:0;">
+      The nightly job on GitHub's servers fires every night, but only actually collects when today matches the schedule above
+      — so “Every 2 weeks on Thursday” collects on alternating Thursdays and skips the nights in between.
+      {collectOn
+        ? ' “Collect now” on the dashboard runs immediately, ignoring the schedule, and only one collection runs at a time across all clients.'
+        : ' Add the GH_DISPATCH_TOKEN secret to the Worker to enable the dashboard’s “Collect now” button.'}
+      Manage the individual IMAP accounts on the <a href="/mailboxes">Client mailboxes</a> page.
+    </p>
+  </section>
+
+  <script is:inline>
+    (function () {
+      var f = document.getElementById('frequency');
+      var dow = document.getElementById('dow-field');
+      var dom = document.getElementById('dom-field');
+      if (f && dow && dom) {
+        var sync = function () {
+          var v = f.value;
+          dow.style.display = v === 'weekly' || v === 'biweekly' ? '' : 'none';
+          dom.style.display = v === 'monthly' ? '' : 'none';
+        };
+        f.addEventListener('change', sync);
+        sync();
+      }
+    })();
+  </script>
+</Base>
