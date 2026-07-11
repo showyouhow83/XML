@@ -16,7 +16,10 @@
       "database_id": "c067759f-d1ee-44d8-8987-da4ff0ffd01f",
       "migrations_dir": "migrations"
     }
-  ]
+  ],
+  // Object storage for invoice PDFs (raw bytes) so they don't bloat D1.
+  // Create the bucket first: `npx wrangler r2 bucket create xml-pdfs`.
+  "r2_buckets": [{ "binding": "PDFS", "bucket_name": "xml-pdfs" }]
   // The Astro Cloudflare adapter injects the Worker entry + static assets at
   // build time, so `main`/`assets` are intentionally omitted here.
   //

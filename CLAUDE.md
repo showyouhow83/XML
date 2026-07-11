@@ -20,6 +20,8 @@ folder.
 - **Cloudflare Worker:** `xml` (account `f2cb7f9c07dd4587efbd7772ff8e324f`)
 - **D1 database:** `xml-db` (`c067759f-d1ee-44d8-8987-da4ff0ffd01f`)
 - **KV (Astro sessions):** `SESSION` (`45ae82c006684626bb5fb721799de4ea`)
+- **R2 bucket (invoice PDFs):** `xml-pdfs` (binding `PDFS`) — raw PDF bytes live
+  here, not base64 in D1. Create it once: `wrangler r2 bucket create xml-pdfs`.
 - **Repo:** github.com/showyouhow83/XML (default branch `main`)
 - **Deploy:** push to `main` → Cloudflare **Workers Builds** auto-builds & deploys
   (`npm run build` then `wrangler deploy`). No manual deploy step.
@@ -62,7 +64,10 @@ in a Node "collector" on GitHub Actions (nightly cron + on-demand dispatch).
   totals (gravado / exento / exonerado / descuentos / venta_neta / impuesto /
   otros_cargos / comprobante), source_account, message_uid, has_pdf, received_at,
   `detail_json`, created_at.
-- **attachments** — `clave` (PK), xml_content (raw XML), pdf_content (base64).
+- **attachments** — `clave` (PK), xml_content (raw XML in D1), pdf_content
+  (legacy base64 — PDFs now live in **R2** as raw bytes under `pdf/<clave>.pdf`;
+  this column is nulled once a PDF is migrated to R2, and is only a fallback for
+  not-yet-migrated PDFs).
 - **app_state** — tiny key/value flags. Holds the **collection lock** (`collection_run`):
   set while a collection is running so only one runs at a time across all clients;
   released on finish, or auto-freed after a 60-min stale timeout.
@@ -138,7 +143,9 @@ Later:
       reasoning across line items.
 - [ ] Line-item-level table + CSV (analysis across all invoices).
 - [ ] Reporting / period summaries per client (for tax filing).
-- [ ] R2 for PDF storage at scale (currently base64 in D1).
+- [x] **R2 for PDF storage** — PDFs are stored in R2 (raw bytes) instead of
+      base64 in D1; ingest uploads to R2, download reads R2 (D1 fallback), and a
+      Settings button migrates any existing D1 PDFs. Keeps D1 lean + off the 10 GB cap.
 - [ ] Onboard many client mailboxes.
 
 ## How to work on it
@@ -155,6 +162,12 @@ Later:
 
 ## Changelog (newest first)
 
+- **#17** **PDFs in R2** — invoice PDFs now live in an R2 bucket (`xml-pdfs`,
+  binding `PDFS`) as raw bytes instead of base64 in D1: ingest uploads to R2,
+  `/api/download` serves from R2 (falling back to any base64 still in D1), and a
+  **“Move PDFs to R2”** button on Settings migrates existing ones (R2‑first, clears
+  the D1 copy only after the upload succeeds). New: `src/lib/pdfs.ts`,
+  `/api/migrate-pdfs`. Keeps D1 small and off the 10 GB‑per‑database cap.
 - **#16** **Ivan chat widget + Settings + responsive** — Ask AI became **Ivan**, a
   floating chat available on every page (`src/components/AskWidget.astro` in the
   layout) whose conversation persists across navigation via `sessionStorage`;

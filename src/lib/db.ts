@@ -308,10 +308,17 @@ export interface IngestRecord extends ExtractedInvoice {
 }
 
 /** Insert or update one invoice + its attachments. Returns 'inserted' or 'updated'. */
-export async function upsertInvoice(db: D1Database, r: IngestRecord): Promise<'inserted' | 'updated'> {
+export async function upsertInvoice(
+  db: D1Database,
+  r: IngestRecord,
+  pdfInR2 = false
+): Promise<'inserted' | 'updated'> {
   const existing = await db.prepare(`SELECT 1 FROM invoices WHERE clave = ?`).bind(r.clave).first();
   const now = new Date().toISOString();
-  const hasPdf = r.pdfContentBase64 ? 1 : 0;
+  // A PDF counts whether it's stored in R2 or as base64 in D1.
+  const hasPdf = r.pdfContentBase64 || pdfInR2 ? 1 : 0;
+  // When the PDF is in R2, don't also store the base64 in D1.
+  const pdfForD1 = pdfInR2 ? null : r.pdfContentBase64;
   const detailJson = r.detail ? JSON.stringify(r.detail) : null;
 
   await db.batch([
@@ -361,7 +368,7 @@ export async function upsertInvoice(db: D1Database, r: IngestRecord): Promise<'i
            xml_content=excluded.xml_content,
            pdf_content=COALESCE(excluded.pdf_content, attachments.pdf_content)`
       )
-      .bind(r.clave, r.xmlContent, r.pdfContentBase64, now),
+      .bind(r.clave, r.xmlContent, pdfForD1, now),
   ]);
 
   return existing ? 'updated' : 'inserted';
@@ -541,6 +548,30 @@ export async function getAttachment(db: D1Database, clave: string) {
     )
     .bind(clave)
     .first<{ xml_content: string | null; pdf_content: string | null; xml_filename: string | null; pdf_filename: string | null }>();
+}
+
+// --- PDF migration (D1 base64 -> R2) helpers ---
+
+/** How many PDFs are still stored as base64 in D1 (i.e. not yet moved to R2). */
+export async function pdfsInD1Count(db: D1Database): Promise<number> {
+  const row = await db
+    .prepare(`SELECT COUNT(*) AS n FROM attachments WHERE pdf_content IS NOT NULL`)
+    .first<{ n: number }>();
+  return row?.n ?? 0;
+}
+
+/** Next batch of PDFs still living in D1, for moving to R2. */
+export async function nextD1PdfBatch(db: D1Database, limit: number): Promise<{ clave: string; pdf_content: string }[]> {
+  const { results } = await db
+    .prepare(`SELECT clave, pdf_content FROM attachments WHERE pdf_content IS NOT NULL LIMIT ?`)
+    .bind(limit)
+    .all<{ clave: string; pdf_content: string }>();
+  return results ?? [];
+}
+
+/** Drop a PDF's base64 from D1 once it's safely in R2. */
+export async function clearD1Pdf(db: D1Database, clave: string): Promise<void> {
+  await db.prepare(`UPDATE attachments SET pdf_content = NULL WHERE clave = ?`).bind(clave).run();
 }
 
 /** Every stored column for one invoice, with detail_json parsed. For the detail page. */

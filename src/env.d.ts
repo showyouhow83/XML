@@ -8,6 +8,9 @@ declare namespace Cloudflare {
     ASSETS: Fetcher;
     SESSION: KVNamespace;
     IMAGES: ImagesBinding;
+    // R2 bucket for invoice PDFs (raw bytes). Optional so the app still runs
+    // (falling back to PDFs stored in D1) if the bucket isn't bound yet.
+    PDFS?: R2Bucket;
     // 32-byte base64 key used to encrypt IMAP passwords at rest.
     TOKEN_ENC_KEY: string;
     // Shared secret the GitHub Actions collector uses to authenticate.

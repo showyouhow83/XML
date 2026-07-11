@@ -1,6 +1,7 @@
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { ensureSchema, getAttachment } from '../../lib/db';
+import { getPdf, base64ToBytes } from '../../lib/pdfs';
 
 function safeName(name: string | null, fallback: string): string {
   const n = (name || fallback).replace(/[^\w.\-]+/g, '_');
@@ -27,14 +28,15 @@ export const GET: APIRoute = async ({ url }) => {
     });
   }
 
+  const pdfHeaders = {
+    'content-type': 'application/pdf',
+    'content-disposition': `attachment; filename="${safeName(att.pdf_filename, clave + '.pdf')}"`,
+  };
+  // Prefer R2 (where PDFs now live); fall back to a base64 copy still in D1.
+  if (env.PDFS) {
+    const buf = await getPdf(env.PDFS, clave);
+    if (buf) return new Response(buf, { headers: pdfHeaders });
+  }
   if (att.pdf_content == null) return new Response('No PDF stored', { status: 404 });
-  const bin = atob(att.pdf_content);
-  const bytes = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  return new Response(bytes, {
-    headers: {
-      'content-type': 'application/pdf',
-      'content-disposition': `attachment; filename="${safeName(att.pdf_filename, clave + '.pdf')}"`,
-    },
-  });
+  return new Response(base64ToBytes(att.pdf_content), { headers: pdfHeaders });
 };
