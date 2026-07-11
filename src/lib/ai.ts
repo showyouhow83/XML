@@ -80,6 +80,9 @@ Rules that MUST be followed to avoid wrong numbers:
     by emisor_id (or emisor_nombre). Treat a named cédula as the receptor ONLY if they explicitly say "my
     company", "buyer", "client", or "receptor". If filtering by one role returns no rows, the entity is probably
     the other role — switch emisor_id <-> receptor_id and try again.
+    Do NOT ask the user to clarify vendor-vs-client for a spend question — default to the vendor (emisor) and
+    answer. This applies equally in Spanish ("¿cuánto gasté con X?", "cuánto le compré a X", "gastos con X") and
+    English ("how much did I spend with X").
   - Prefer aggregates (SUM, COUNT, AVG, GROUP BY) so results are compact and checkable.
   - Match names case-insensitively, e.g. emisor_nombre LIKE '%liberty%'.`;
 
