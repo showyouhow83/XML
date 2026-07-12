@@ -437,6 +437,7 @@ export interface InvoiceFilters {
   account?: string;
   docType?: string;
   moneda?: string;
+  ivaRate?: number;
   emisorId?: string;
   receptorId?: string;
   from?: string;
@@ -471,6 +472,7 @@ function buildWhere(f: InvoiceFilters): { sql: string; binds: unknown[] } {
   if (f.account) { clauses.push(`source_account = ?`); binds.push(f.account); }
   if (f.docType) { clauses.push(`doc_type = ?`); binds.push(f.docType); }
   if (f.moneda) { clauses.push(`moneda = ?`); binds.push(f.moneda); }
+  if (f.ivaRate !== undefined) { clauses.push(`iva_rate = ?`); binds.push(f.ivaRate); }
   if (f.emisorId) { clauses.push(`emisor_id = ?`); binds.push(f.emisorId); }
   if (f.receptorId) { clauses.push(`receptor_id = ?`); binds.push(f.receptorId); }
   if (f.from) { clauses.push(`fecha_emision >= ?`); binds.push(f.from); }
@@ -545,12 +547,14 @@ export async function filterOptions(db: D1Database) {
   const accountsP = db.prepare(`SELECT DISTINCT source_account AS v FROM invoices WHERE source_account IS NOT NULL ORDER BY v`).all<{ v: string }>();
   const typesP = db.prepare(`SELECT DISTINCT doc_type AS v FROM invoices WHERE doc_type IS NOT NULL ORDER BY v`).all<{ v: string }>();
   const monedasP = db.prepare(`SELECT DISTINCT moneda AS v FROM invoices WHERE moneda IS NOT NULL ORDER BY v`).all<{ v: string }>();
+  const ivaRatesP = db.prepare(`SELECT DISTINCT iva_rate AS v FROM invoices WHERE iva_rate IS NOT NULL ORDER BY v`).all<{ v: number }>();
   const emisoresP = db.prepare(`SELECT emisor_id AS id, MAX(emisor_nombre) AS nombre, COUNT(*) AS n FROM invoices WHERE emisor_id IS NOT NULL GROUP BY emisor_id ORDER BY nombre`).all<{ id: string; nombre: string; n: number }>();
-  const [accounts, types, monedas, emisores] = await Promise.all([accountsP, typesP, monedasP, emisoresP]);
+  const [accounts, types, monedas, ivaRates, emisores] = await Promise.all([accountsP, typesP, monedasP, ivaRatesP, emisoresP]);
   return {
     accounts: (accounts.results ?? []).map((r) => r.v),
     docTypes: (types.results ?? []).map((r) => r.v),
     monedas: (monedas.results ?? []).map((r) => r.v),
+    ivaRates: (ivaRates.results ?? []).map((r) => r.v),
     emisores: emisores.results ?? [],
   };
 }

@@ -181,6 +181,15 @@ Later:
 
 ## Changelog (newest first)
 
+- **#26** **Settings hub redesign + rename to “Recibos XML” + IVA filter** — the
+  Settings page is now a **grouped list** (icon · title/description · current value ·
+  chevron) instead of a flat card grid, so it reads like real settings; the sub-pages
+  are unchanged. The app is renamed **Recibos XML** (nav brand, page titles, login),
+  and the **brand in the top nav links to the dashboard**. On the dashboard, the
+  **Currency** filter (everything is colones) is replaced by an **IVA %** filter
+  (distinct `iva_rate` values); CSV export honors it too. New CSS: `.settings-list` /
+  `.set-row*`; db: `InvoiceFilters.ivaRate` + `filterOptions().ivaRates`. Verified
+  against a running dev server (settings screenshots + 5/5 filter checks).
 - **#25** **Ivan gets its own AI page + in-app model picker** — the **Ivan · Ask AI**
   card now opens a dedicated **`/ai`** page (breadcrumb `Settings › Ivan · AI`), like
   Mailboxes and Collection. There you pick which **Claude** model powers Ivan —
