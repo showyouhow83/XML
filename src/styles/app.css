@@ -82,9 +82,23 @@ h2 { font-size: 15px; margin: 0 0 12px; }
   margin-bottom: 20px;
 }
 
-.filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
+/* Filter bar: a tidy grid so no single field hogs the row. Search spans 2 cols;
+   the action buttons get their own full-width row. */
+.filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; align-items: end; }
+.filters .field-wide { grid-column: span 2; }
+.filters input, .filters select { width: 100%; min-width: 0; }
+.filter-actions { grid-column: 1 / -1; display: flex; gap: 8px; flex-wrap: wrap; }
 .field { display: flex; flex-direction: column; gap: 4px; }
 .field label { font-size: 12px; color: var(--muted); font-weight: 500; }
+
+/* Dashboard header + "Collect now" control */
+.dash-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
+.collect-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.collect-opts { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.collect-bar select { min-width: auto; }
+.collect-lbl { font-size: 12px; }
+.collect-rescan { font-size: 12px; display: inline-flex; align-items: center; gap: 5px; }
+.collect-rescan input { min-width: auto; width: auto; padding: 0; border: 0; background: none; }
 input, select {
   font: inherit;
   padding: 7px 9px;
@@ -207,8 +221,17 @@ a.set-row:hover .set-row-chev { color: var(--brand); }
   .topnav nav { gap: 4px; }
   .topnav nav a { padding: 6px 9px; }
   h1 { font-size: 18px; }
-  .card .value { font-size: 20px; }
   th, td { padding: 8px 10px; }
+  /* KPI cards: two compact cards per row instead of one sparse full-width one */
+  .cards { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .card { padding: 12px; gap: 10px; }
+  .card .card-ic { width: 34px; height: 34px; font-size: 17px; border-radius: 9px; }
+  .card .value { font-size: 18px; }
+  .card .value.sm { font-size: 14px; }
+  /* Collect control: options span the row, button full-width below */
+  .collect-bar { width: 100%; }
+  .collect-opts { width: 100%; justify-content: space-between; }
+  .collect-btn { width: 100%; }
 }
 
 @media (prefers-color-scheme: dark) {

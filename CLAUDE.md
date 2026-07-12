@@ -181,6 +181,17 @@ Later:
 
 ## Changelog (newest first)
 
+- **#28** **Ivan CSV export + dashboard filter/header/mobile polish** — Ivan answers
+  that return a table now get a **⬇ Exportar CSV** button; it re-posts Ivan's SQL to
+  new **`/api/ask-export`**, which re-validates it (same read-only-SELECT guard as
+  `/api/ask`) and streams the full result (≤500) as CSV (BOM, Excel-friendly). The
+  **filter bar** is now a grid — Search spans 2 columns, the rest pack evenly, and
+  Apply/Reset/Export get their own row (no more over-wide Search/Issuer). The
+  **“Collect now”** header and **KPI cards** are fixed on mobile (button goes
+  full-width; cards show 2-up instead of one sparse box), and the **With PDF** card
+  uses a 📄 icon. New: `/api/ask-export`, `.filters` grid / `.dash-head` / `.collect-*`
+  styles. Verified against a running dev server (export 4/4 + endpoint checks;
+  desktop/mobile screenshots).
 - **#27** **Dashboard restyle to match the new design language** — the dashboard
   now shares the Settings look: **icon-tile KPI cards** (🧾 invoices / 📎 with PDF /
   📥 mailboxes / 💰 per-currency totals), a **harmonized 12px radius** across cards,
