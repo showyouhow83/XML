@@ -11,12 +11,13 @@ function csvCell(v: unknown): string {
 export const GET: APIRoute = async ({ url }) => {
   await ensureSchema(env.DB);
   const p = url.searchParams;
+  const ivaParam = p.get('iva');
 
   const filters: InvoiceFilters = {
     q: p.get('q') || undefined,
     account: p.get('account') || undefined,
     docType: p.get('docType') || undefined,
-    moneda: p.get('moneda') || undefined,
+    ivaRate: ivaParam && Number.isFinite(Number(ivaParam)) ? Number(ivaParam) : undefined,
     from: p.get('from') || undefined,
     to: p.get('to') || undefined,
     hasPdf: p.get('hasPdf') === '1' ? true : p.get('hasPdf') === '0' ? false : undefined,

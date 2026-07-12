@@ -6,7 +6,7 @@ const failed = Astro.url.searchParams.get('error') === '1';
 <Base title="Sign in" nav={false}>
   <div class="login-wrap">
     <div class="panel">
-      <div class="brand" style="font-size:16px;font-weight:700;margin-bottom:12px;">📄 Financing Inbox</div>
+      <div class="brand" style="font-size:16px;font-weight:700;margin-bottom:12px;">📄 Recibos XML</div>
       {failed && <div class="banner err">Incorrect password.</div>}
       <form method="post" action="/api/login">
         <div class="field" style="text-align:left;margin-bottom:12px;">

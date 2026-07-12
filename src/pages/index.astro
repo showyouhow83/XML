@@ -7,10 +7,12 @@ const url = Astro.url;
 const p = url.searchParams;
 const collect = p.get('collect');
 const view = p.get('view'); // 'issuers' = grouped-by-cédula summary
+const ivaParam = p.get('iva');
+const ivaRate = ivaParam && Number.isFinite(Number(ivaParam)) ? Number(ivaParam) : undefined;
 
 let dbError: string | null = null;
 let data: Awaited<ReturnType<typeof listInvoices>> | null = null;
-let options = { accounts: [] as string[], docTypes: [] as string[], monedas: [] as string[], emisores: [] as { id: string; nombre: string; n: number }[] };
+let options = { accounts: [] as string[], docTypes: [] as string[], monedas: [] as string[], ivaRates: [] as number[], emisores: [] as { id: string; nombre: string; n: number }[] };
 let stats = { invoices: 0, withPdf: 0, mailboxes: 0 };
 let groups: IssuerGroup[] = [];
 let collectionLock: CollectionLock = { active: false, startedAt: null, startedBy: null };
@@ -19,7 +21,7 @@ const filters: InvoiceFilters = {
   q: p.get('q') || undefined,
   account: p.get('account') || undefined,
   docType: p.get('docType') || undefined,
-  moneda: p.get('moneda') || undefined,
+  ivaRate,
   emisorId: p.get('emisorId') || undefined,
   receptorId: p.get('receptorId') || undefined,
   from: p.get('from') || undefined,
@@ -97,7 +99,7 @@ const total = data?.total ?? 0;
 const showingTo = Math.min(offset + limit, total);
 ---
 
-<Base title="Dashboard · Financing Inbox" active="dashboard">
+<Base title="Dashboard · Recibos XML" active="dashboard">
   <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap;">
     <div>
       <h1>Invoice dashboard</h1>
@@ -163,10 +165,10 @@ const showingTo = Math.min(offset + limit, total);
       </select>
     </div>
     <div class="field">
-      <label for="moneda">Currency</label>
-      <select id="moneda" name="moneda">
+      <label for="iva">IVA %</label>
+      <select id="iva" name="iva">
         <option value="">All</option>
-        {options.monedas.map((m) => <option value={m} selected={filters.moneda === m}>{m}</option>)}
+        {options.ivaRates.map((r) => <option value={r} selected={filters.ivaRate === r}>{r}%</option>)}
       </select>
     </div>
     <div class="field" style="flex:1 1 220px;">

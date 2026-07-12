@@ -7,7 +7,7 @@ interface Props {
   active?: 'dashboard' | 'settings';
   nav?: boolean;
 }
-const { title = 'Financing Inbox', active, nav = true } = Astro.props;
+const { title = 'Recibos XML', active, nav = true } = Astro.props;
 const gated = Boolean(env.APP_PASSWORD);
 ---
 
@@ -23,7 +23,7 @@ const gated = Boolean(env.APP_PASSWORD);
   <body>
     {nav && (
       <header class="topnav">
-        <div class="brand">📄 Financing <span>Inbox</span></div>
+        <a class="brand" href="/" aria-label="Recibos XML — go to dashboard">📄 Recibos <span>XML</span></a>
         <nav>
           <a href="/" class={active === 'dashboard' ? 'active' : ''}>Dashboard</a>
           <a href="/settings" class={active === 'settings' ? 'active' : ''}>Settings</a>

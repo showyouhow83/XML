@@ -40,56 +40,76 @@ const effectiveAiModel = aiModel || env.AI_MODEL_SQL || 'claude-opus-4-8';
 const needsOrganize = r2On && (pdfsInD1 > 0 || legacyPdfs);
 ---
 
-<Base title="Settings · Financing Inbox" active="settings">
+<Base title="Settings · Recibos XML" active="settings">
   <h1>Settings</h1>
-  <p class="sub">Manage how the app connects, collects, answers, and stores.</p>
+  <p class="sub">Everything that controls how invoices are collected, answered, and stored.</p>
 
   {dbError && <div class="banner err">{dbError}</div>}
 
-  <div class="settings-grid">
-    <a class="setting-card" href="/mailboxes">
-      <span class="setting-ic">📥</span>
-      <span>
-        <strong>Client mailboxes</strong>
-        <span class="muted">IMAP accounts the collector reads invoices from · {mailboxCount} configured →</span>
-      </span>
-    </a>
-
-    <a class="setting-card" href="/ai">
-      <span class="setting-ic">🤖</span>
-      <span>
-        <strong>Ivan · Ask AI</strong>
-        <span class="muted">{aiOn ? <>Model: <strong>{aiModelLabel(effectiveAiModel)}</strong> · tap 💬 Ivan on any page to chat</> : 'Not configured — add the ANTHROPIC_API_KEY secret'} →</span>
-      </span>
-    </a>
-
-    <a class="setting-card" href="/collection">
-      <span class="setting-ic">⟳</span>
-      <span>
-        <strong>Collection</strong>
-        <span class="muted">Automatic collection schedule · runs <strong>{describeSchedule(schedule)}</strong> →</span>
-      </span>
-    </a>
-
-    <div class="setting-card">
-      <span class="setting-ic">🗄️</span>
-      <span>
-        <strong>PDF storage</strong>
-        <span class="muted" id="pdf-status">
-          {!r2On
-            ? 'PDFs are stored in the database. Create an R2 bucket named “xml-pdfs” and bind it as PDFS to move them.'
-            : needsOrganize
-              ? pdfsInD1 > 0
-                ? `${pdfsInD1.toLocaleString()} PDF(s) still in the database — move them to R2, grouped by mailbox.`
-                : 'Some PDFs aren’t grouped into mailbox folders yet — organize them.'
-              : 'PDFs are stored in R2, grouped by mailbox. ✓'}
-        </span>
-        {needsOrganize && (
-          <span style="display:block; margin-top:8px;">
-            <button id="migrate-pdfs" class="btn secondary sm" type="button" data-total={pdfCount}>Move / organize PDFs by mailbox</button>
+  <div class="settings-list">
+    <div class="settings-section">
+      <h2>Invoice collection</h2>
+      <div class="set-group">
+        <a class="set-row" href="/mailboxes">
+          <span class="set-row-ic">📥</span>
+          <span class="set-row-body">
+            <span class="t">Client mailboxes</span>
+            <span class="d">IMAP accounts invoices are collected from</span>
           </span>
-        )}
-      </span>
+          <span class="set-row-val">
+            <span class="v">{mailboxCount} {mailboxCount === 1 ? 'mailbox' : 'mailboxes'}</span>
+            <span class="set-row-chev">›</span>
+          </span>
+        </a>
+        <a class="set-row" href="/collection">
+          <span class="set-row-ic">⟳</span>
+          <span class="set-row-body">
+            <span class="t">Collection schedule</span>
+            <span class="d">How often invoices are pulled automatically</span>
+          </span>
+          <span class="set-row-val">
+            <span class="v">{describeSchedule(schedule)}</span>
+            <span class="set-row-chev">›</span>
+          </span>
+        </a>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <h2>Assistant &amp; storage</h2>
+      <div class="set-group">
+        <a class="set-row" href="/ai">
+          <span class="set-row-ic">🤖</span>
+          <span class="set-row-body">
+            <span class="t">Ivan · Ask AI</span>
+            <span class="d">Ask about your invoices in plain Spanish or English</span>
+          </span>
+          <span class="set-row-val">
+            <span class="v">{aiOn ? aiModelLabel(effectiveAiModel) : 'Not configured'}</span>
+            <span class="set-row-chev">›</span>
+          </span>
+        </a>
+        <div class="set-row">
+          <span class="set-row-ic">🗄️</span>
+          <span class="set-row-body">
+            <span class="t">PDF storage</span>
+            <span class="d" id="pdf-status">
+              {!r2On
+                ? 'Stored in the database — bind an R2 bucket (PDFS) to move them.'
+                : needsOrganize
+                  ? pdfsInD1 > 0
+                    ? `${pdfsInD1.toLocaleString()} still in the database — organize into R2 by mailbox.`
+                    : 'Some PDFs aren’t grouped into mailbox folders yet.'
+                  : 'Stored in R2, grouped into a folder per mailbox.'}
+            </span>
+          </span>
+          <span class="set-row-val">
+            {needsOrganize
+              ? <button id="migrate-pdfs" class="btn secondary sm" type="button" data-total={pdfCount}>Organize</button>
+              : <span class="v">{r2On ? 'R2 ✓' : 'Database'}</span>}
+          </span>
+        </div>
+      </div>
     </div>
   </div>
 
