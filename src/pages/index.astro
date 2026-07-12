@@ -134,13 +134,16 @@ const showingTo = Math.min(offset + limit, total);
   {dbError && <div class="banner err">{dbError}</div>}
 
   <section class="cards">
-    <div class="card"><div class="label">Invoices</div><div class="value">{stats.invoices.toLocaleString()}</div></div>
-    <div class="card"><div class="label">With PDF</div><div class="value">{stats.withPdf.toLocaleString()}</div></div>
-    <div class="card"><div class="label">Mailboxes</div><div class="value">{stats.mailboxes.toLocaleString()}</div></div>
+    <div class="card"><span class="card-ic">🧾</span><div class="card-body"><div class="label">Invoices</div><div class="value">{stats.invoices.toLocaleString()}</div></div></div>
+    <div class="card"><span class="card-ic">📎</span><div class="card-body"><div class="label">With PDF</div><div class="value">{stats.withPdf.toLocaleString()}</div></div></div>
+    <div class="card"><span class="card-ic">📥</span><div class="card-body"><div class="label">Mailboxes</div><div class="value">{stats.mailboxes.toLocaleString()}</div></div></div>
     {(data?.currencyTotals ?? []).map((c) => (
       <div class="card">
-        <div class="label">Total {c.moneda || '—'} ({c.count})</div>
-        <div class="value sm">{money(c.total, c.moneda)}</div>
+        <span class="card-ic">💰</span>
+        <div class="card-body">
+          <div class="label">Total {c.moneda || '—'} ({c.count})</div>
+          <div class="value sm">{money(c.total, c.moneda)}</div>
+        </div>
       </div>
     ))}
   </section>

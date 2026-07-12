@@ -181,6 +181,12 @@ Later:
 
 ## Changelog (newest first)
 
+- **#27** **Dashboard restyle to match the new design language** — the dashboard
+  now shares the Settings look: **icon-tile KPI cards** (🧾 invoices / 📎 with PDF /
+  📥 mailboxes / 💰 per-currency totals), a **harmonized 12px radius** across cards,
+  panels and the table (bumped the global `--radius`), and a **roomier table**
+  (more padding, softer header). Pure styling + KPI-card markup; no behavior change.
+  Verified with light/dark/mobile screenshots on seeded sample data.
 - **#26** **Settings hub redesign + rename to “Recibos XML” + IVA filter** — the
   Settings page is now a **grouped list** (icon · title/description · current value ·
   chevron) instead of a flat card grid, so it reads like real settings; the sub-pages
