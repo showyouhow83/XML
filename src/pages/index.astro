@@ -100,27 +100,28 @@ const showingTo = Math.min(offset + limit, total);
 ---
 
 <Base title="Dashboard · Recibos XML" active="dashboard">
-  <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap;">
+  <div class="dash-head">
     <div>
       <h1>Invoice dashboard</h1>
       <p class="sub">Electronic invoices (XML) collected from your client mailboxes, with matched PDFs.</p>
     </div>
-    <form method="post" action="/api/collect-now" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-      <label for="lookback" class="muted" style="font-size:12px;">First pull / re-scan</label>
-      <select id="lookback" name="lookback" style="min-width:auto;" disabled={collecting}>
-        <option value="30">30 days</option>
-        <option value="90">3 months</option>
-        <option value="180">6 months</option>
-        <option value="365">1 year</option>
-        <option value="730" selected>2 years</option>
-        <option value="1825">5 years</option>
-      </select>
-      <label class="muted" style="font-size:12px; display:flex; align-items:center; gap:4px;" title="Re-read everything in the window again, even invoices you already have. Use after we change how invoices are extracted. Normally leave off — runs only pull new mail.">
-        <input type="checkbox" name="full" value="1" style="min-width:auto; width:auto; padding:0; border:0; background:none;" disabled={collecting} /> re-scan all
-      </label>
-      <button class="btn" type="submit" disabled={collecting}
-        title={collecting ? 'A collection is already running — wait for it to finish' : "Pull invoices from your mailboxes (only new mail unless 're-scan all' is checked)"}
-        style={collecting ? 'opacity:.6; cursor:not-allowed;' : ''}>
+    <form method="post" action="/api/collect-now" class="collect-bar">
+      <span class="collect-opts">
+        <label for="lookback" class="muted collect-lbl">First pull / re-scan</label>
+        <select id="lookback" name="lookback" disabled={collecting}>
+          <option value="30">30 days</option>
+          <option value="90">3 months</option>
+          <option value="180">6 months</option>
+          <option value="365">1 year</option>
+          <option value="730" selected>2 years</option>
+          <option value="1825">5 years</option>
+        </select>
+        <label class="muted collect-rescan" title="Re-read everything in the window again, even invoices you already have. Use after we change how invoices are extracted. Normally leave off — runs only pull new mail.">
+          <input type="checkbox" name="full" value="1" disabled={collecting} /> re-scan all
+        </label>
+      </span>
+      <button class="btn collect-btn" type="submit" disabled={collecting}
+        title={collecting ? 'A collection is already running — wait for it to finish' : "Pull invoices from your mailboxes (only new mail unless 're-scan all' is checked)"}>
         {collecting ? '⟳ Collecting…' : '⟳ Collect now'}
       </button>
     </form>
@@ -135,7 +136,7 @@ const showingTo = Math.min(offset + limit, total);
 
   <section class="cards">
     <div class="card"><span class="card-ic">🧾</span><div class="card-body"><div class="label">Invoices</div><div class="value">{stats.invoices.toLocaleString()}</div></div></div>
-    <div class="card"><span class="card-ic">📎</span><div class="card-body"><div class="label">With PDF</div><div class="value">{stats.withPdf.toLocaleString()}</div></div></div>
+    <div class="card"><span class="card-ic">📄</span><div class="card-body"><div class="label">With PDF</div><div class="value">{stats.withPdf.toLocaleString()}</div></div></div>
     <div class="card"><span class="card-ic">📥</span><div class="card-body"><div class="label">Mailboxes</div><div class="value">{stats.mailboxes.toLocaleString()}</div></div></div>
     {(data?.currencyTotals ?? []).map((c) => (
       <div class="card">
@@ -149,7 +150,7 @@ const showingTo = Math.min(offset + limit, total);
   </section>
 
   <form class="panel filters" method="get">
-    <div class="field" style="flex:1 1 200px;">
+    <div class="field field-wide">
       <label for="q">Search</label>
       <input id="q" type="search" name="q" value={filters.q ?? ''} placeholder="Issuer, ID, clave, consecutivo…" />
     </div>
@@ -174,7 +175,7 @@ const showingTo = Math.min(offset + limit, total);
         {options.ivaRates.map((r) => <option value={r} selected={filters.ivaRate === r}>{r}%</option>)}
       </select>
     </div>
-    <div class="field" style="flex:1 1 220px;">
+    <div class="field">
       <label for="emisorId">Issuer (cédula)</label>
       <select id="emisorId" name="emisorId">
         <option value="">All</option>
@@ -196,9 +197,11 @@ const showingTo = Math.min(offset + limit, total);
     <input type="hidden" name="sort" value={filters.sort} />
     <input type="hidden" name="dir" value={filters.dir} />
     {view && <input type="hidden" name="view" value={view} />}
-    <button class="btn" type="submit">Apply</button>
-    <a class="btn secondary" href="/">Reset</a>
-    <a class="btn secondary" href={exportHref}>Export CSV</a>
+    <div class="filter-actions">
+      <button class="btn" type="submit">Apply</button>
+      <a class="btn secondary" href="/">Reset</a>
+      <a class="btn secondary" href={exportHref}>Export CSV</a>
+    </div>
   </form>
 
   <div style="display:flex; gap:6px; margin-bottom:12px;">

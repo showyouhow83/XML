@@ -184,10 +184,34 @@ const configured = Boolean(env.ANTHROPIC_API_KEY);
       thread.appendChild(box);
       return box;
     }
+    async function exportCsv(sql, btn) {
+      if (window.__setBusy) window.__setBusy(btn, true, 'Exportando…'); else btn.disabled = true;
+      try {
+        var res = await fetch('/api/ask-export', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sql: sql }) });
+        if (!res.ok) { errorEl.hidden = false; errorEl.textContent = 'No se pudo exportar: ' + (await res.text()); return; }
+        var blob = await res.blob();
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a'); a.href = url; a.download = 'ivan-datos.csv';
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(function () { URL.revokeObjectURL(url); }, 1500);
+      } catch (e) {
+        errorEl.hidden = false; errorEl.textContent = 'Error al exportar: ' + (e && e.message ? e.message : e);
+      } finally {
+        if (window.__setBusy) window.__setBusy(btn, false); else btn.disabled = false;
+      }
+    }
     function fillAnswer(box, t) {
       var a = document.createElement('div'); a.className = 'ask-a'; renderMarkdown(t.answer || '(sin respuesta)', a); box.appendChild(a);
       if (t.sql) { var d = details('SQL'); var pre = document.createElement('pre'); pre.className = 'ask-sql'; pre.textContent = t.sql; d.appendChild(pre); box.appendChild(d); }
-      if (t.rows && t.rows.length) { var lbl = t.truncated ? ('Datos (' + t.rows.length + ' de ' + (t.rowCount || t.rows.length).toLocaleString() + ')') : ('Datos (' + (t.rowCount || t.rows.length).toLocaleString() + ')'); var d2 = details(lbl); var bx = document.createElement('div'); bx.style.marginTop = '6px'; bx.appendChild(rowsTable(t.rows)); d2.appendChild(bx); box.appendChild(d2); }
+      if (t.rows && t.rows.length) {
+        var lbl = t.truncated ? ('Datos (' + t.rows.length + ' de ' + (t.rowCount || t.rows.length).toLocaleString() + ')') : ('Datos (' + (t.rowCount || t.rows.length).toLocaleString() + ')');
+        var d2 = details(lbl); var bx = document.createElement('div'); bx.style.marginTop = '6px'; bx.appendChild(rowsTable(t.rows)); d2.appendChild(bx); box.appendChild(d2);
+        if (t.sql) {
+          var exp = document.createElement('button'); exp.type = 'button'; exp.className = 'btn secondary sm'; exp.style.marginTop = '8px'; exp.textContent = '⬇ Exportar CSV';
+          exp.addEventListener('click', function () { exportCsv(t.sql, exp); });
+          box.appendChild(exp);
+        }
+      }
     }
     function renderTurn(t) { fillAnswer(makeTurnBox(t.q), t); }
     function renderAll() {
