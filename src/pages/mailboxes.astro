@@ -1,20 +1,20 @@
 ---
 import { env } from 'cloudflare:workers';
 import Base from '../layouts/Base.astro';
-import { ensureSchema, listMailboxes, mailboxInvoiceCounts, type MailboxRow } from '../lib/db';
+import { ensureSchema, listMailboxes, mailboxCoverage, type MailboxRow, type MailboxCoverage } from '../lib/db';
 
 const p = Astro.url.searchParams;
 
 let dbError: string | null = null;
 let mailboxes: MailboxRow[] = [];
-let counts: Record<string, number> = {};
+let coverage: Record<string, MailboxCoverage> = {};
 
 if (!env.DB) {
   dbError = 'D1 database binding "DB" not found. Create it with `npx wrangler d1 create financing-invoices` and update wrangler.jsonc.';
 } else {
   try {
     await ensureSchema(env.DB);
-    [mailboxes, counts] = await Promise.all([listMailboxes(env.DB), mailboxInvoiceCounts(env.DB)]);
+    [mailboxes, coverage] = await Promise.all([listMailboxes(env.DB), mailboxCoverage(env.DB)]);
   } catch (err) {
     dbError = (err as Error).message;
   }
@@ -23,6 +23,7 @@ if (!env.DB) {
 const notice = p.get('added') ? 'Mailbox saved.' : p.get('deleted') ? 'Mailbox removed.' : null;
 const error = p.get('error');
 const fmtDateTime = (iso: string | null) => (iso ? iso.replace('T', ' ').slice(0, 16) : 'never');
+const fmtDate = (iso: string | null) => (iso ? iso.slice(0, 10) : '—');
 
 function statusInfo(s: string | null) {
   const v = (s || '').toLowerCase();
@@ -75,25 +76,30 @@ const anyCollecting = mailboxes.some((m) => (m.last_status || '').toLowerCase().
       <div class="table-wrap">
         <table>
           <thead>
-            <tr><th>Client</th><th>Email</th><th class="right">Invoices</th><th>Covers back to</th><th>Last sync</th><th>Status</th><th></th></tr>
+            <tr><th>Client</th><th>Email</th><th class="right">Invoices</th><th>Receipts back to</th><th>Last collected</th><th>Status</th><th></th></tr>
           </thead>
           <tbody>
             {mailboxes.map((m) => {
               const si = statusInfo(m.last_status);
+              const cov = coverage[m.email] ?? { count: 0, oldest: null, newest: null };
+              const rangeTitle = cov.oldest
+                ? `Receipts from ${fmtDate(cov.oldest)} to ${fmtDate(cov.newest)} · ${cov.count.toLocaleString()} total`
+                  + (m.synced_from ? `. Last search went back to ${fmtDate(m.synced_from)}.` : '')
+                : 'No receipts collected yet';
               return (
                 <tr>
                   <td>{m.label || '—'}</td>
                   <td>{m.email}</td>
-                  <td class="num">{(counts[m.email] ?? 0).toLocaleString()}</td>
-                  <td class="muted">{m.synced_from ? m.synced_from.slice(0, 10) : '—'}</td>
+                  <td class="num">{cov.count.toLocaleString()}</td>
+                  <td class="muted" title={rangeTitle}>{cov.oldest ? fmtDate(cov.oldest) : '—'}</td>
                   <td class="muted">{fmtDateTime(m.last_synced_at)}</td>
                   <td><span class={`pill ${si.cls}`} title={si.title}>{si.text}</span></td>
                   <td class="right">
                     <span class="row-actions">
-                      {(counts[m.email] ?? 0) > 0 && (
+                      {cov.count > 0 && (
                         <a class="btn secondary sm" href={`/api/download-client?account=${encodeURIComponent(m.email)}&type=xml`} title="Download every XML for this mailbox as a zip">⬇ XML</a>
                       )}
-                      {(counts[m.email] ?? 0) > 0 && (
+                      {cov.count > 0 && (
                         <a class="btn secondary sm" href={`/api/download-client?account=${encodeURIComponent(m.email)}&type=pdf`} title="Download every PDF for this mailbox as a zip">⬇ PDFs</a>
                       )}
                       <form class="inline" method="post" action="/api/mailboxes/delete" onsubmit="return confirm('Remove this mailbox?')">
@@ -108,6 +114,11 @@ const anyCollecting = mailboxes.some((m) => (m.last_status || '').toLowerCase().
           </tbody>
         </table>
       </div>
+      <p class="muted" style="margin:10px 2px 0; font-size:12px;">
+        <strong>Receipts back to</strong> is the date of the <em>oldest receipt actually collected</em> for that mailbox (from your data), and
+        <strong>Last collected</strong> is when the last pull ran — so you can see your real coverage instead of guessing. Hover the date to see the
+        full range and how far back the last search looked. To pull older receipts, run <strong>Collect now</strong> with a wider “how far back” window.
+      </p>
     ) : (
       !dbError && <div class="panel empty">No mailboxes yet. Add one above, or supply a <code>mailboxes.json</code> to the collector.</div>
     )}

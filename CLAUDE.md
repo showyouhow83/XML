@@ -181,6 +181,16 @@ Later:
 
 ## Changelog (newest first)
 
+- **#30** **Mailboxes show real receipt coverage (not the search window)** — the
+  Mailboxes table’s **“Covers back to”** column showed `synced_from` (the date the
+  collector last *searched* back to), which is confusing — it doesn’t say how far
+  back your actual receipts go. Replaced with data-driven columns: **“Receipts back
+  to”** = the oldest collected receipt (`MIN(fecha_emision)` per mailbox) and
+  **“Last collected”** = `last_synced_at`, with a tooltip showing the full
+  oldest→newest range and the searched-window. So you can see true coverage and
+  decide whether to pull further back instead of guessing. New db helper
+  `mailboxCoverage` (count + oldest + newest per `source_account`). Verified with a
+  seeded-mailboxes screenshot.
 - **#29** **Per-mailbox XML zip download** — each Mailboxes row now has a **⬇ XML**
   button next to **⬇ PDFs** that streams a zip of every invoice XML for that
   mailbox (named by `xml_filename`, else consecutivo). XML lives in D1
