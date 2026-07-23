@@ -181,6 +181,14 @@ Later:
 
 ## Changelog (newest first)
 
+- **#29** **Per-mailbox XML zip download** — each Mailboxes row now has a **⬇ XML**
+  button next to **⬇ PDFs** that streams a zip of every invoice XML for that
+  mailbox (named by `xml_filename`, else consecutivo). XML lives in D1
+  (`attachments.xml_content`), fetched per-clave so the zip streams instead of
+  loading everything into memory. The per-mailbox endpoint `/api/download-client`
+  now takes `type=xml|pdf` (default pdf); the XML path needs no R2. New db helpers
+  `clientXmlList` / `getXmlContent`. Verified against a running dev server (valid
+  zip, correct entries, empty-mailbox 404).
 - **#28** **Ivan CSV export + dashboard filter/header/mobile polish** — Ivan answers
   that return a table now get a **⬇ Exportar CSV** button; it re-posts Ivan's SQL to
   new **`/api/ask-export`**, which re-validates it (same read-only-SELECT guard as
