@@ -91,7 +91,10 @@ const anyCollecting = mailboxes.some((m) => (m.last_status || '').toLowerCase().
                   <td class="right">
                     <span class="row-actions">
                       {(counts[m.email] ?? 0) > 0 && (
-                        <a class="btn secondary sm" href={`/api/download-client?account=${encodeURIComponent(m.email)}`} title="Download every PDF for this mailbox as a zip">⬇ PDFs</a>
+                        <a class="btn secondary sm" href={`/api/download-client?account=${encodeURIComponent(m.email)}&type=xml`} title="Download every XML for this mailbox as a zip">⬇ XML</a>
+                      )}
+                      {(counts[m.email] ?? 0) > 0 && (
+                        <a class="btn secondary sm" href={`/api/download-client?account=${encodeURIComponent(m.email)}&type=pdf`} title="Download every PDF for this mailbox as a zip">⬇ PDFs</a>
                       )}
                       <form class="inline" method="post" action="/api/mailboxes/delete" onsubmit="return confirm('Remove this mailbox?')">
                         <input type="hidden" name="id" value={m.id} />

@@ -666,6 +666,32 @@ export async function clientPdfList(
   return results ?? [];
 }
 
+/** Every invoice (with its XML filename) for one mailbox — for the per-mailbox
+ *  XML zip. All invoices have XML, so this is just the mailbox's invoices. */
+export async function clientXmlList(
+  db: D1Database,
+  account: string
+): Promise<{ clave: string; xml_filename: string | null; consecutivo: string | null }[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT clave, xml_filename, consecutivo FROM invoices
+       WHERE source_account = ? ORDER BY fecha_emision`
+    )
+    .bind(account)
+    .all<{ clave: string; xml_filename: string | null; consecutivo: string | null }>();
+  return results ?? [];
+}
+
+/** The raw XML for one invoice (stored in D1). Fetched per-clave so the zip
+ *  streams instead of loading every XML into memory at once. */
+export async function getXmlContent(db: D1Database, clave: string): Promise<string | null> {
+  const row = await db
+    .prepare(`SELECT xml_content FROM attachments WHERE clave = ?`)
+    .bind(clave)
+    .first<{ xml_content: string | null }>();
+  return row?.xml_content ?? null;
+}
+
 /** Every stored column for one invoice, with detail_json parsed. For the detail page. */
 export async function getInvoiceFull(
   db: D1Database,
