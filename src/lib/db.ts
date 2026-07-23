@@ -149,6 +149,26 @@ export async function mailboxInvoiceCounts(db: D1Database): Promise<Record<strin
   return out;
 }
 
+/** Actual receipt coverage per mailbox, from the stored data (not the search
+ *  window): invoice count + oldest/newest receipt date (by fecha_emision). */
+export interface MailboxCoverage {
+  count: number;
+  oldest: string | null;
+  newest: string | null;
+}
+export async function mailboxCoverage(db: D1Database): Promise<Record<string, MailboxCoverage>> {
+  const { results } = await db
+    .prepare(
+      `SELECT source_account AS email, COUNT(*) AS n,
+              MIN(fecha_emision) AS oldest, MAX(fecha_emision) AS newest
+       FROM invoices WHERE source_account IS NOT NULL GROUP BY source_account`
+    )
+    .all<{ email: string; n: number; oldest: string | null; newest: string | null }>();
+  const out: Record<string, MailboxCoverage> = {};
+  for (const r of results ?? []) out[r.email] = { count: r.n, oldest: r.oldest, newest: r.newest };
+  return out;
+}
+
 export interface CollectorMailbox {
   id: number;
   label: string | null;
